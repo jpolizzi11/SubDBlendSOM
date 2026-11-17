@@ -551,7 +551,7 @@ details.sub > .settings { padding-bottom: 6px; }
         <label class="mrow"><input type="checkbox" id="tSeamsChk" checked> Show passages</label>
         <div class="mrow" style="border-top:1px solid var(--line);margin-top:4px;padding-top:8px"><b style="color:var(--ink)">Fuse</b></div>
         <div class="mrow"><span>Seam blend</span><span class="rangerow" style="min-width:120px"><input type="range" id="tFuseBlend" min="2" max="8" step="0.5" value="4"><output id="tFuseBlendOut">4 ft</output></span></div>
-        <div class="mrow"><span>Openings</span><select id="tFuseOpen"><option value="none">None</option><option value="blocked" selected>Where a door meets a wall</option><option value="touching">…and between touching rooms</option></select></div><label class="mrow"><input type="checkbox" id="tLevels" checked> Show floor levels</label></div></details><label class="note" style="margin:0;display:flex;gap:6px;align-items:center" title="Blend all pieces into one seamless form and open walls where doors meet them"><input type="checkbox" id="tFuse"> Fuse</label><button class="btn small" id="tToFuse" title="Open this cluster in the Fuse step to perfect its joins">Send to Fuse →</button><button class="btn small primary" id="tileExport">Cluster STL .zip</button></span></h2>
+        <div class="mrow"><span>Openings</span><select id="tFuseOpen"><option value="none">None</option><option value="blocked" selected>Where a door meets a wall</option><option value="touching">…and between touching rooms</option></select></div><label class="mrow"><input type="checkbox" id="tLevels" checked> Show floor levels</label></div></details><label class="note" style="margin:0;display:flex;gap:6px;align-items:center" title="Blend all pieces into one seamless form and open walls where doors meet them"><input type="checkbox" id="tFuse"> Fuse</label><label class="note" style="margin:0;display:flex;gap:6px;align-items:center" title="Show how you walk through the cluster, piece to piece"><input type="checkbox" id="tPaths"> Paths</label><button class="btn small" id="tToFuse" title="Open this cluster in the Fuse step to perfect its joins">Send to Fuse →</button><button class="btn small primary" id="tileExport">Cluster STL .zip</button></span></h2>
       <canvas id="tileViewer"></canvas>
       <div class="secbar" id="tSec"></div>
       <div class="vhint" style="padding:6px 14px 0">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. Green lines are the shared floor levels.</div>
@@ -587,7 +587,7 @@ details.sub > .settings { padding-bottom: 6px; }
   </div>
   <div class="col">
     <section class="panel">
-      <div class="maptools"><strong id="fzTitle" style="font-size:15px">No cluster sent yet</strong><span class="actions" style="margin:0"><button class="btn small" id="fzBack">Edit pieces in Clusters</button><button class="btn small" id="fzRemove">Remove from Fuse</button><button class="btn small primary" id="fzExport">Fused STL .zip</button></span></div>
+      <div class="maptools"><strong id="fzTitle" style="font-size:15px">No cluster sent yet</strong><span class="actions" style="margin:0"><label class="note" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="fzPaths"> Paths</label><button class="btn small" id="fzBack">Edit pieces in Clusters</button><button class="btn small" id="fzRemove">Remove from Fuse</button><button class="btn small primary" id="fzExport">Fused STL .zip</button></span></div>
       <canvas id="fzViewer"></canvas>
       <div class="secbar" id="fzSec"></div>
       <div class="vhint" style="padding:6px 14px 0">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. With a brush tool on, click the surface to edit it.</div>
@@ -4978,7 +4978,7 @@ function fuseMesh(base, ops) { const D = fuseApplyOps(base, ops); return fuseNet
    clusters/<id>. */
 let tilingOn = false;
 const TL = { info: new Map(), pre: new Map(), feet: new Map(), prepJob: null, local: false, clusters: [], cur: store.get('clSel', null), pick: -1, level: 0,
-  color: 'clay', showSeams: true, showLevels: true, fuse: { on: false, blend: 4, open: 'blocked', sig: '', geom: null, busy: false, tok: 0 }, view: null, saveT: new Map(), fitsKey: '', fits: null,
+  color: 'clay', showSeams: true, showLevels: true, paths: { on: false, sig: '', data: null, busy: '' }, fuse: { on: false, blend: 4, open: 'blocked', sig: '', geom: null, busy: false, tok: 0 }, view: null, saveT: new Map(), fitsKey: '', fits: null,
   set: Object.assign({ module: 30, H: 12, detail: 64, exportDetail: 64 }, store.get('clSet', {})),
   rules: Object.assign({ layout: 'free', rows: 2, cols: 3, tiers: 1, upper: 'sparse', pieces: 0, offset: 0.7, stack: -1, scale: 'auto', mirror: 0.3, variety: 0.5, passages: 0.6, rotate: true }, store.get('clRules', {})) };
 TILE_FT = TL.set.module;
@@ -5110,6 +5110,13 @@ function renderTiles3D() {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
     levelLines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x2fb57f, transparent: true, opacity: 0.55 })); tscene3.add(levelLines);
   }
+  if (TL.paths.on && c.pieces.length) { const sig = fuseSig(c, 1) + '|paths';
+    if (TL.paths.sig === sig && TL.paths.data) drawCirculation(tgroup, TL.paths.data);
+    else if (TL.paths.busy !== sig) { TL.paths.busy = sig; status('Tracing the walking routes…');
+      setTimeout(() => { try { const ev = evaluateCluster(c.pieces, byIdFull(), 0), zs = new Map();
+          const base = fuseCluster(c.pieces, (i) => { const pc = c.pieces[i]; if (!refItem(pc.t)) return null; const cut = !!(ev.roofCut && ev.roofCut.has(i)), key = pc.t + (cut ? '|c' : ''); if (!zs.has(key)) zs.set(key, fuseDataFor(pc.t, cut)); return zs.get(key); }, ev, { H: TL.set.H, voxel: 1, blend: 1.5, smooth: 1, open: 'none', clear: 0 });
+          if (base) { TL.paths.data = circulation(base, withStoreys(c.pieces), ev, TL.set.H); TL.paths.sig = sig; const n = TL.paths.data.paths.length; status(`Walking routes · ${n} route${n === 1 ? '' : 's'} linking ${TL.paths.data.stops.length} doorways and rooms. Floors need about 6 ft of headroom to count.`, 1); }
+        } catch (e) { console.warn('paths', e); toast('Could not trace the routes.'); } TL.paths.busy = ''; renderTiles3D(); }, 30); } }
   if (typeof tSecSt !== 'undefined') applySection(tgroup, tSecSt);
   if (!tFramed && tgroup.children.length) frameTiles();
   $('tileStats').innerHTML = ev ? `<b style="color:#2fb57f">${ev.passages} passages</b> · <b style="color:${ev.blocked ? '#e0303a' : 'inherit'}">${ev.blocked} blocked</b> · ${ev.entrances} entrance${ev.entrances === 1 ? '' : 's'} · ${ev.terraces} terrace door${ev.terraces === 1 ? '' : 's'}` +
@@ -5329,6 +5336,7 @@ $('tH').addEventListener('change', (e) => { TL.set.H = Math.max(8, Math.min(30, 
 $('tDetail').addEventListener('change', (e) => { TL.set.detail = +e.target.value; saveSet(); prepAll(); });
 $('tExpDetail').addEventListener('change', (e) => { TL.set.exportDetail = +e.target.value; saveSet(); });
 $('tLevels').addEventListener('change', (e) => { TL.showLevels = e.target.checked; renderTiles3D(); });
+$('tPaths').addEventListener('change', (e) => { TL.paths.on = e.target.checked; renderTiles3D(); });
 $('tFuse').addEventListener('change', (e) => { TL.fuse.on = e.target.checked; if (!TL.fuse.on) status('Pieces shown separately.', 1); renderTiles3D(); });
 $('tFuseBlend').addEventListener('input', (e) => { $('tFuseBlendOut').value = e.target.value + ' ft'; });
 $('tFuseBlend').addEventListener('change', (e) => { TL.fuse.blend = +e.target.value; renderTiles3D(); });
@@ -5406,6 +5414,73 @@ function showTiling(on) {
 }
 startTiling();
 
+/* ---------------- Circulation: walking routes through a cluster ----------------
+   On every level the walkable floor is found (floor underfoot, 7 ft of headroom). Entrances, doorways between pieces and
+   each piece's main room become stops; the cheapest routes between them (kept to the middle of corridors) are joined into
+   one network per level, and void cores add vertical links between levels. */
+function circulation(grid, pieces, ev, H) {
+  const { D, nx, ny, nz, v, x0, y0, z0 } = grid, sxy = nx * ny, out = { paths: [], stops: [], lifts: [] };
+  const at = (X, Y, Z) => { const ix = Math.round((X - x0) / v), iy = Math.round((Y - y0) / v), iz = Math.round((Z - z0) / v); return ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz ? 1e3 : D[ix + iy * nx + iz * sxy]; };
+  const tb = (q) => q; let maxL = 0; for (const pc of pieces) maxL = Math.max(maxL, pc.base + (pc.storeys || 1));
+  for (let g = 0; g < maxL; g++) { const yf = g * H, N2 = nx * nz, walk = new Uint8Array(N2), hf = new Float32Array(N2); let nW = 0;
+    for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) { const X = x0 + ix * v, Z = z0 + iz * v;
+      let ys = null; for (let y = yf + 1.6; y >= yf - 1.2; y -= v * 0.5) if (at(X, y, Z) < 0) { ys = y; break; } if (ys == null) continue; // floor surface within a step of this level
+      let clear = true; for (let y = ys + 0.7; y <= ys + 6; y += 0.8) if (at(X, y, Z) < 0) { clear = false; break; } if (!clear) continue; // about 6 ft of headroom
+      walk[ix + iz * nx] = 1; hf[ix + iz * nx] = ys; nW++; }
+    if (nW < 20) continue;
+    // clearance (cells to the nearest non-walkable cell), to keep routes in the middle of corridors
+    const cl = new Float32Array(N2); for (let c = 0; c < N2; c++) cl[c] = walk[c] ? 1e6 : 0;
+    for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) { const c = ix + iz * nx; if (!cl[c]) continue; let m = cl[c]; if (ix > 0) m = Math.min(m, cl[c - 1] + 1); if (iz > 0) { m = Math.min(m, cl[c - nx] + 1); if (ix > 0) m = Math.min(m, cl[c - nx - 1] + 1.414); if (ix < nx - 1) m = Math.min(m, cl[c - nx + 1] + 1.414); } else m = Math.min(m, 1); if (ix === 0) m = Math.min(m, 1); cl[c] = m; }
+    for (let iz = nz - 1; iz >= 0; iz--) for (let ix = nx - 1; ix >= 0; ix--) { const c = ix + iz * nx; if (!cl[c]) continue; let m = cl[c]; if (ix < nx - 1) m = Math.min(m, cl[c + 1] + 1); else m = Math.min(m, 1); if (iz < nz - 1) { m = Math.min(m, cl[c + nx] + 1); if (ix < nx - 1) m = Math.min(m, cl[c + nx + 1] + 1.414); if (ix > 0) m = Math.min(m, cl[c + nx - 1] + 1.414); } else m = Math.min(m, 1); cl[c] = m; }
+    const cellOf = (X, Z) => [Math.round((X - x0) / v), Math.round((Z - z0) / v)];
+    const snap = (X, Z, rad) => { const [cx, cz] = cellOf(X, Z), r = Math.ceil(rad / v); let best = -1, bd = Infinity;
+      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) { const ix = cx + dx, iz = cz + dz; if (ix < 0 || iz < 0 || ix >= nx || iz >= nz) continue; const c = ix + iz * nx; if (!walk[c]) continue; const d = Math.hypot(dx, dz) - Math.min(cl[c], 3) * 0.3; if (d < bd) { bd = d; best = c; } } return best; };
+    // stops: doorways and entrances on this level, then each piece's roomiest spot
+    const stops = [], addStop = (c, kind) => { if (c < 0) return; const x = c % nx, z = (c / nx) | 0; if (stops.some((s) => Math.hypot(s.x - x, s.z - z) * v < 3)) return; stops.push({ c, x, z, kind }); };
+    for (const sm of (ev && ev.seams) || []) { if (sm.g !== g || !'PEBT'.includes(sm.kind)) continue; const along = sm.ws === 0 || sm.ws === 2; addStop(snap(along ? sm.c : sm.u, along ? sm.u : sm.c, 5), sm.kind); }
+    for (const pc of pieces) { if (!(pc.base <= g && g < pc.base + (pc.storeys || 1))) continue; const S = pSize(pc) / 2; let best = -1, bc = 0;
+      for (let iz = Math.max(0, Math.floor((pc.z - S - z0) / v)); iz <= Math.min(nz - 1, Math.ceil((pc.z + S - z0) / v)); iz++) for (let ix = Math.max(0, Math.floor((pc.x - S - x0) / v)); ix <= Math.min(nx - 1, Math.ceil((pc.x + S - x0) / v)); ix++) { const c = ix + iz * nx; if (walk[c] && cl[c] > bc) { bc = cl[c]; best = c; } }
+      if (bc * v >= 2) addStop(best, 'room'); }
+    if (stops.length < 2) { for (const s of stops) out.stops.push({ p: [x0 + s.x * v, yf + 0.3, z0 + s.z * v], kind: s.kind }); continue; }
+    // shortest routes from every stop (cost favours the middle of a corridor)
+    const cost = (c) => 1 + 2.5 / Math.max(0.6, cl[c]), runs = stops.map((s) => {
+      const dist = new Float32Array(N2).fill(Infinity), par = new Int32Array(N2).fill(-1), heap = [[0, s.c]]; dist[s.c] = 0;
+      const push = (it) => { heap.push(it); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+      const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+      while (heap.length) { const [d, c] = pop(); if (d > dist[c]) continue; const x = c % nx, z = (c / nx) | 0;
+        for (const [dx, dz, w] of [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]]) { const xx = x + dx, zz = z + dz; if (xx < 0 || zz < 0 || xx >= nx || zz >= nz) continue; const q = xx + zz * nx; if (!walk[q] || Math.abs(hf[q] - hf[c]) > 1.1) continue; // steps up to ~1 ft
+          const nd = d + w * cost(q); if (nd < dist[q]) { dist[q] = nd; par[q] = c; push([nd, q]); } } }
+      return { dist, par }; });
+    // join the stops into one network (minimum spanning tree over route costs)
+    const inT = new Uint8Array(stops.length); inT[0] = 1; let added = true;
+    const comps = []; // grow a tree from each still-unreached stop so separate parts still get their routes
+    for (let root = 0; root < stops.length; root++) { if (inT[root] && root !== 0) continue; inT[root] = 1; added = true;
+      while (added) { added = false; let bi = -1, bj = -1, bd = Infinity;
+        for (let i = 0; i < stops.length; i++) if (inT[i]) for (let j = 0; j < stops.length; j++) if (!inT[j]) { const d = runs[i].dist[stops[j].c]; if (d < bd) { bd = d; bi = i; bj = j; } }
+        if (bj < 0 || !isFinite(bd)) break; inT[bj] = 1; added = true; comps.push([bi, bj]); } }
+    for (const [i, j] of comps) { const cells = []; let c = stops[j].c; while (c >= 0 && cells.length < 100000) { cells.push(c); if (c === stops[i].c) break; c = runs[i].par[c]; }
+      let pts = cells.map((q) => [x0 + (q % nx) * v, z0 + ((q / nx) | 0) * v]); const step = Math.max(1, Math.round(1.5 / v)); pts = pts.filter((_, k) => k % step === 0 || k === pts.length - 1);
+      for (let it = 0; it < 2 && pts.length > 2; it++) { const q = [pts[0]]; for (let k = 0; k < pts.length - 1; k++) { const a = pts[k], b = pts[k + 1]; q.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25], [a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]); } q.push(pts[pts.length - 1]); pts = q; }
+      const hAt = (x, z) => { const c = Math.round((x - x0) / v) + Math.round((z - z0) / v) * nx; return walk[c] ? hf[c] : yf; };
+      out.paths.push(pts.map(([x, z]) => [x, hAt(x, z) + 0.35, z])); }
+    for (const s of stops) out.stops.push({ p: [x0 + s.x * v, hf[s.c] + 0.35, z0 + s.z * v], kind: s.kind });
+  }
+  // vertical links through void cores (stacked over a tall void)
+  for (const lk of (ev && ev.links) || []) { const u = pieces[lk.u], l = pieces[lk.l]; if (!u || !l) continue; out.lifts.push([[u.x, l.base * H + 0.35, u.z], [u.x, u.base * H + 0.35, u.z]]); }
+  return out;
+}
+// draw a route network: red tubes along the floors, dots at doorways and rooms, vertical links through void cores
+const PATH_MAT = new THREE.MeshBasicMaterial({ color: 0xe0303a }), STOP_MAT = { room: new THREE.MeshBasicMaterial({ color: 0xffffff }), door: new THREE.MeshBasicMaterial({ color: 0xe0303a }) };
+function drawCirculation(group, cr) {
+  const g = new THREE.Group(); g.userData.isPaths = true;
+  for (const p of cr.paths) { if (p.length < 2) continue; const pts = p.map((q) => new THREE.Vector3(q[0], q[1], q[2]));
+    const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal'); g.add(new THREE.Mesh(new THREE.TubeGeometry(curve, Math.max(8, pts.length * 2), 0.32, 6, false), PATH_MAT)); }
+  for (const l of cr.lifts) { const a = new THREE.Vector3(...l[0]), b = new THREE.Vector3(...l[1]); const m = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, a.distanceTo(b), 8), PATH_MAT); m.position.copy(a).add(b).multiplyScalar(0.5); g.add(m); }
+  const sg = new THREE.SphereGeometry(0.75, 16, 10); for (const s of cr.stops) { const m = new THREE.Mesh(sg, s.kind === 'room' ? STOP_MAT.room : STOP_MAT.door); m.position.set(s.p[0], s.p[1] + 0.2, s.p[2]); g.add(m); }
+  group.add(g); return g;
+}
+const withStoreys = (pieces) => pieces.map((pc) => { const f = refItem(pc.t) ? tileFeetFor(pc.t) : null; return Object.assign({}, pc, { storeys: f ? f.storeys : 1 }); });
+
 /* ---------------- Section planes (X, Y in plan, Z = height) for the cluster viewers ----------------
    Each axis: on/off, position along the model (0-100%), and which side is kept. Cut faces show solid (poché). */
 function sectionUI(el, onChange) {
@@ -5466,7 +5541,7 @@ function fzRenderList() {
 function fzShowMesh(mesh) {
   while (fzGroup.children.length) { const o = fzGroup.children.pop(); if (o.geometry) o.geometry.dispose(); }
   if (!mesh) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3)); g.setIndex(new THREE.BufferAttribute(mesh.indices, 1)); g.computeVertexNormals();
-  fzGroup.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0xdedbd5, roughness: 0.75, metalness: 0, side: THREE.DoubleSide }))); applySection(fzGroup, fzSecSt); if (!FZ.framed) fzFrame();
+  fzGroup.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0xdedbd5, roughness: 0.75, metalness: 0, side: THREE.DoubleSide }))); fzDrawPaths(); applySection(fzGroup, fzSecSt); if (!FZ.framed) fzFrame();
 }
 // full rebuild when the cluster or the transition settings change; brush edits only re-mesh the stored form
 async function fzRefresh(full) {
@@ -5482,9 +5557,16 @@ async function fzRefresh(full) {
     if (!out || tok !== FZ.tok) return; FZ.base = out; FZ.baseSig = sig;
     $('fzStats').textContent = `${out.cuts} opening${out.cuts === 1 ? '' : 's'} through walls · ${out.slots} low slot${out.slots === 1 ? '' : 's'} raised to 7 ft · floor holes patched on ${out.holes} level${out.holes === 1 ? '' : 's'}`;
   }
-  const t0 = performance.now(); FZ.mesh = fuseMesh(FZ.base, c.fz.ops || []); fzShowMesh(FZ.mesh);
+  const D = fuseApplyOps(FZ.base, c.fz.ops || []); FZ.mesh = fuseNets(D, FZ.base.nx, FZ.base.ny, FZ.base.nz, FZ.base.v, FZ.base.x0, FZ.base.y0, FZ.base.z0); FZ.grid = Object.assign({}, FZ.base, { D }); FZ.paths = null; fzShowMesh(FZ.mesh);
   status(`Fuse · ${c.name} · one continuous form${c.fz.ops && c.fz.ops.length ? ` with ${c.fz.ops.length} brush edit${c.fz.ops.length > 1 ? 's' : ''}` : ''}.`, 1);
 }
+function fzDrawPaths() {
+  for (const o of [...fzGroup.children]) if (o.userData.isPaths) fzGroup.remove(o);
+  const c = fzCluster(); if (!$('fzPaths').checked || !c || !FZ.grid) return;
+  if (!FZ.paths) { try { FZ.paths = circulation(FZ.grid, withStoreys(c.pieces), evaluateCluster(c.pieces, byIdFull(), 0), TL.set.H); } catch (e) { console.warn('paths', e); return; } }
+  drawCirculation(fzGroup, FZ.paths); applySection(fzGroup, fzSecSt);
+}
+$('fzPaths').addEventListener('change', fzDrawPaths);
 function fzUpdate(patch, full) { const c = fzCluster(); if (!c) return; c.fz = Object.assign({}, c.fz, patch); saveCluster(c); fzRefresh(full); }
 for (const [id, key, fmt] of [['fzBlend', 'blend', (x) => x + ' ft'], ['fzSmooth', 'smooth', (x) => String(x)], ['fzClear', 'clear', (x) => x + ' ft'], ['fzHoles', 'holes', (x) => (+x ? x + ' sq ft' : 'ground only')]]) {
   $(id).addEventListener('input', (e) => { $(id + 'Out').value = fmt(e.target.value); });
