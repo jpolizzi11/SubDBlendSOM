@@ -164,6 +164,8 @@ select, input[type=number] { border: 1px solid var(--line); background: var(--pa
 @media (max-width:700px){.hyblist{grid-template-columns:repeat(3,minmax(0,1fr))}}
 body.refine-mode main.app:not(#refineApp),body.refine-mode #layoutSw,body.refine-mode #placeSw,body.refine-mode #runBtn,body.refine-mode #bankBtn{display:none!important}
 body.tiling-mode main.app:not(#tileApp),body.tiling-mode #layoutSw,body.tiling-mode #placeSw,body.tiling-mode #runBtn,body.tiling-mode #bankBtn{display:none!important}
+body.fuse-mode main.app:not(#fuseApp),body.fuse-mode #runBtn,body.fuse-mode #bankBtn,body.fuse-mode #typoTabs,body.fuse-mode #mapMenu{display:none!important}
+#fzViewer{width:100%;display:block;background:var(--viewer);touch-action:none;cursor:grab}#fzViewer.brush{cursor:crosshair}
 .clprog{margin-top:12px}.clhead{display:flex;align-items:center;gap:8px;margin-bottom:6px}.clhead .btn{margin-left:auto}.clhead .dot{width:10px;height:10px;border-radius:50%}
 .clitem{display:block;width:100%;text-align:left;border:1px solid transparent;background:transparent;border-radius:6px;padding:5px 10px;cursor:pointer;font-weight:600;color:var(--ink)}.clitem:hover{background:var(--sunk)}.clitem.on{border-color:var(--accent);background:var(--sunk)}.clitem small{color:var(--muted);font-weight:500;margin-left:6px}
 .clname{font:inherit;font-size:15px;font-weight:700;border:1px solid transparent;background:transparent;color:var(--ink);border-radius:6px;padding:4px 6px;min-width:0;flex:1}.clname:hover,.clname:focus{border-color:var(--line)}
@@ -538,10 +540,45 @@ details.sub > .settings { padding-bottom: 6px; }
         <label class="mrow"><input type="checkbox" id="tSeamsChk" checked> Show passages</label>
         <div class="mrow" style="border-top:1px solid var(--line);margin-top:4px;padding-top:8px"><b style="color:var(--ink)">Fuse</b></div>
         <div class="mrow"><span>Seam blend</span><span class="rangerow" style="min-width:120px"><input type="range" id="tFuseBlend" min="2" max="8" step="0.5" value="4"><output id="tFuseBlendOut">4 ft</output></span></div>
-        <div class="mrow"><span>Openings</span><select id="tFuseOpen"><option value="none">None</option><option value="blocked" selected>Where a door meets a wall</option><option value="touching">…and between touching rooms</option></select></div><label class="mrow"><input type="checkbox" id="tLevels" checked> Show floor levels</label></div></details><label class="note" style="margin:0;display:flex;gap:6px;align-items:center" title="Blend all pieces into one seamless form and open walls where doors meet them"><input type="checkbox" id="tFuse"> Fuse</label><button class="btn small primary" id="tileExport">Cluster STL .zip</button></span></h2>
+        <div class="mrow"><span>Openings</span><select id="tFuseOpen"><option value="none">None</option><option value="blocked" selected>Where a door meets a wall</option><option value="touching">…and between touching rooms</option></select></div><label class="mrow"><input type="checkbox" id="tLevels" checked> Show floor levels</label></div></details><label class="note" style="margin:0;display:flex;gap:6px;align-items:center" title="Blend all pieces into one seamless form and open walls where doors meet them"><input type="checkbox" id="tFuse"> Fuse</label><button class="btn small" id="tToFuse" title="Open this cluster in the Fuse step to perfect its joins">Send to Fuse →</button><button class="btn small primary" id="tileExport">Cluster STL .zip</button></span></h2>
       <canvas id="tileViewer"></canvas>
       <div class="vhint" style="padding:6px 14px 0">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. Green lines are the shared floor levels.</div>
       <p class="note pad" id="tileStats" style="margin:0"></p>
+    </section>
+  </div>
+</main>
+<main class="app" id="fuseApp" hidden>
+  <div class="col">
+    <section class="panel">
+      <h2>Sent clusters <span class="num" id="fzCount">0</span></h2>
+      <div class="pad"><p class="note" style="margin:0">Send a cluster here from the Clusters tab (3D panel → <b>Send to Fuse</b>). Here the pieces become one form and you perfect the joins.</p><div id="fzList" style="margin-top:8px"></div></div>
+    </section>
+    <section class="panel">
+      <h2>Transitions</h2>
+      <div class="pad settings">
+        <label for="fzBlend">Seam blend<small>How far pieces blend into each other at the joins.</small></label><span class="rangerow"><input type="range" id="fzBlend" min="2" max="10" step="0.5"><output id="fzBlendOut"></output></span>
+        <label for="fzSmooth">Join smoothing<small>Softens creases and rough edges around every join.</small></label><span class="rangerow"><input type="range" id="fzSmooth" min="0" max="12" step="1"><output id="fzSmoothOut"></output></span>
+        <label for="fzClear">Clear walkways<small>Keeps the path through every opening free of anything jutting in, this far on each side.</small></label><span class="rangerow"><input type="range" id="fzClear" min="0" max="8" step="0.5"><output id="fzClearOut"></output></span>
+        <label for="fzHoles">Patch floor holes<small>Ground floor: every hole and gap. Upper floors: holes up to this size (bigger ones are kept as voids).</small></label><span class="rangerow"><input type="range" id="fzHoles" min="0" max="400" step="10"><output id="fzHolesOut"></output></span>
+        <label for="fzOpen">Openings<small>Cut through walls so the cluster can be walked.</small></label><select id="fzOpen"><option value="none">None</option><option value="blocked">Where a door meets a wall</option><option value="touching">…and between touching rooms</option></select>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Brush</h2>
+      <div class="pad settings">
+        <label>Tool<small>Pick one, then click on the model. Orbit lets you look around.</small></label><div class="seg" id="fzTool" role="group" aria-label="Brush tool"><button data-t="orbit" aria-pressed="true">Orbit</button><button data-t="smooth" aria-pressed="false">Smooth</button><button data-t="cut" aria-pressed="false">Cut</button><button data-t="fill" aria-pressed="false">Fill</button></div>
+        <label for="fzRad">Brush size</label><span class="rangerow"><input type="range" id="fzRad" min="0.5" max="8" step="0.5" value="2.5"><output id="fzRadOut">2.5 ft</output></span>
+        <p class="note" id="fzEdits" style="grid-column:1/-1;margin:0"></p>
+        <div class="actions" style="grid-column:1/-1;margin-top:0"><button class="btn small" id="fzUndo">Undo last edit</button><button class="btn small" id="fzClearEdits">Clear all edits</button></div>
+      </div>
+    </section>
+  </div>
+  <div class="col">
+    <section class="panel">
+      <div class="maptools"><strong id="fzTitle" style="font-size:15px">No cluster sent yet</strong><span class="actions" style="margin:0"><button class="btn small" id="fzBack">Edit pieces in Clusters</button><button class="btn small" id="fzRemove">Remove from Fuse</button><button class="btn small primary" id="fzExport">Fused STL .zip</button></span></div>
+      <canvas id="fzViewer"></canvas>
+      <div class="vhint" style="padding:6px 14px 0">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. With a brush tool on, click the surface to edit it.</div>
+      <p class="note pad" id="fzStats" style="margin:0"></p>
     </section>
   </div>
 </main>
@@ -2011,8 +2048,9 @@ async function preloadAll() { for (const t of TYPOLOGIES) { try { await presetMo
 function updateSlidesBtn() { const b = $('dlSlides'); if (!b) return; const t = typoOf(curTypo); b.hidden = !t; b.disabled = !(state.res && t); }
 function renderTypoTabs() {
   const nav = $('stepNav'); nav.innerHTML = '';
-  const steps = [['SOM map', '', !refineOn && !tilingOn, () => { if (refineOn) showRefine(false); if (tilingOn) showTiling(false); }],
-    ['Refine', `${REF.items.length}`, refineOn, () => { if (tilingOn) showTiling(false); showRefine(true); }], ['Clusters', '', tilingOn, () => showTiling(true)]];
+  const steps = [['SOM map', '', !refineOn && !tilingOn && !(fuseOn), () => { if (fuseOn) showFuse(false); if (refineOn) showRefine(false); if (tilingOn) showTiling(false); }],
+    ['Refine', `${REF.items.length}`, refineOn, () => { if (fuseOn) showFuse(false); if (tilingOn) showTiling(false); showRefine(true); }], ['Clusters', '', tilingOn, () => { if (fuseOn) showFuse(false); showTiling(true); }],
+    ['Fuse', FZ ? `${fuseSent().length || ''}` : '', fuseOn, () => showFuse(true)]];
   steps.forEach(([lab, sm, on, fn], i) => { const b = document.createElement('button'); b.setAttribute('aria-pressed', String(on)); b.innerHTML = `<b>${i + 1}</b>${lab}${sm ? `<small>${sm}</small>` : ''}`; b.addEventListener('click', fn); nav.appendChild(b); });
   const box = $('typoTabs'); box.innerHTML = '';
   TABS.forEach((t, i) => {
@@ -4752,8 +4790,8 @@ function fuseNets(D, nx, ny, nz, v, ox, oy, oz) {
 }
 // pieces: cluster pieces; zOf(i) -> sampling data for piece i (or null); ev: evaluateCluster result; opts: { blend, open: 'none'|'blocked'|'touching', H, voxel }
 function fuseCluster(pieces, zOf, ev, opts) {
-  const H = opts.H, k = Math.max(0.5, opts.blend || 4), open = opts.open || 'blocked';
-  const items = pieces.map((pc, i) => { const z = zOf(i); return z ? { pc, f: fusePieceSDF(pc, z, H), top: pc.base * H + z.height + 1, bot: pc.base * H - 2, S: pSize(pc) } : null; }).filter(Boolean);
+  const H = opts.H, k = Math.max(0.5, opts.blend || 4), open = opts.open || 'blocked', clear = opts.clear ?? 2, holesMax = opts.holes ?? 80, smoothN = opts.smooth ?? 4;
+  const items = pieces.map((pc, i) => { const z = zOf(i); return z ? { pc, f: fusePieceSDF(pc, z, H), top: pc.base * H + z.height + 1, bot: pc.base * H - 2, S: pSize(pc), openBottom: !!z.openBottom } : null; }).filter(Boolean);
   if (!items.length) return null;
   const pad = k + 2; let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const q of items) { x0 = Math.min(x0, q.pc.x - q.S / 2); x1 = Math.max(x1, q.pc.x + q.S / 2); z0 = Math.min(z0, q.pc.z - q.S / 2); z1 = Math.max(z1, q.pc.z + q.S / 2); y0 = Math.min(y0, q.bot); y1 = Math.max(y1, q.top); }
@@ -4782,6 +4820,27 @@ function fuseCluster(pieces, zOf, ev, opts) {
           for (let iy = iy0; iy <= iy1; iy++) { const Y = y0 + iy * v, n = along ? [t, 0] : [0, t];
             const db = Math.max(at(X - n[0], Y, Z - n[1], D0), at(X + n[0], Y, Z + n[1], D0)); if (db >= 0.3) continue;
             const ii = ix + iy * nx + iz * sxy, fill = db + (1 - w) * 0.6; if (fill < D[ii]) { const h = Math.max(1.2 - Math.abs(fill - D[ii]), 0) / 1.2; D[ii] = Math.min(fill, D[ii]) - h * h * 0.3; } near[ii] = Math.max(near[ii], 2); } } } } }
+  // 1b. floor holes: on each level, the slab under every piece that stands there is checked; gaps between pieces and holes
+  // are patched (all of them on the ground floor; on upper floors only holes up to holesMax sq ft, so real voids stay open)
+  let holes = 0; { const levels = [...new Set(items.filter((q) => !q.openBottom).map((q) => q.pc.base))];
+    for (const g of levels) { const yf = g * H, region = new Uint8Array(nx * nz), solid = new Uint8Array(nx * nz);
+      for (const q of items) { if (q.pc.base !== g || q.openBottom) continue; const S = q.S / 2 + 1.5;
+        for (let iz = Math.max(0, Math.floor((q.pc.z - S - z0) / v)); iz <= Math.min(nz - 1, Math.ceil((q.pc.z + S - z0) / v)); iz++) for (let ix = Math.max(0, Math.floor((q.pc.x - S - x0) / v)); ix <= Math.min(nx - 1, Math.ceil((q.pc.x + S - x0) / v)); ix++) region[ix + iz * nx] = 1; }
+      for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) { const c = ix + iz * nx; if (region[c] && (at(x0 + ix * v, yf - 0.5, z0 + iz * v) < 0 || at(x0 + ix * v, yf - 0.15, z0 + iz * v) < 0)) solid[c] = 1; }
+      // close narrow gaps: grow the slab by r, then shrink it back (only inside the region)
+      const r = Math.max(1, Math.round(2 / v)), grow = (A, val) => { const B = Uint8Array.from(A);
+        for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) { const c = ix + iz * nx; if (A[c] === val) continue; let hit = false;
+          for (let d = -r; d <= r && !hit; d++) { const a = ix + d, b = iz + d; if (a >= 0 && a < nx && A[a + iz * nx] === val) hit = true; if (b >= 0 && b < nz && A[ix + b * nx] === val) hit = true; } if (hit) B[c] = val; } return B; };
+      const closed = grow(grow(solid, 1), 0); const fill = new Uint8Array(nx * nz);
+      for (let c = 0; c < nx * nz; c++) if (region[c] && !solid[c] && closed[c]) fill[c] = 1;
+      // enclosed holes (not reachable from the outside of the region)
+      const seen = new Uint8Array(nx * nz);
+      for (let c0 = 0; c0 < nx * nz; c0++) { if (solid[c0] || seen[c0] || !region[c0]) continue; const comp = [c0], q2 = [c0]; seen[c0] = 1; let touchesOut = false;
+        while (q2.length) { const c = q2.pop(), x = c % nx, z = (c / nx) | 0; for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const a = x + dx, b = z + dz; if (a < 0 || b < 0 || a >= nx || b >= nz) { touchesOut = true; continue; } const q = a + b * nx; if (solid[q] || seen[q]) continue; if (!region[q]) { touchesOut = true; continue; } seen[q] = 1; comp.push(q); q2.push(q); } }
+        const area = comp.length * v * v; if (!touchesOut && (g === 0 || area <= holesMax)) for (const c of comp) fill[c] = 1; }
+      let n = 0; for (let c = 0; c < nx * nz; c++) { if (!fill[c]) continue; n++; const ix = c % nx, iz = (c / nx) | 0;
+        for (let iy = Math.max(0, Math.floor((yf - 1.6 - y0) / v)); iy <= Math.min(ny - 1, Math.ceil((yf + 0.6 - y0) / v)); iy++) { const Y = y0 + iy * v, sd = Math.max(yf - 1 - Y, Y - yf), i = ix + iy * nx + iz * sxy; if (sd < D[i]) D[i] = sd; near[i] = Math.max(near[i], 2); } }
+      if (n) holes++; } }
   // 2. walkable slots: a low opening at floor level through a thin wall (lower than 7 ft, wall continuing above) is raised to 7 ft
   const slotCuts = []; { const DOOR = 7, maxSt = Math.ceil((y1 - Math.max(0, y0)) / H);
     for (let g = 0; g <= maxSt; g++) { const yf = g * H; if (yf < y0 + 1 || yf + DOOR > y1) continue; const cand = new Uint8Array(nx * nz), nrm = new Uint8Array(nx * nz);
@@ -4806,7 +4865,7 @@ function fuseCluster(pieces, zOf, ev, opts) {
     for (let p = 0; p < Math.max(2, Math.round(k / (2 * v))); p++) { const m2 = Uint8Array.from(mask); // grow the seam zone
       for (let iz = 1; iz < nz - 1; iz++) for (let iy = 1; iy < ny - 1; iy++) for (let ix = 1; ix < nx - 1; ix++) { const i = ix + iy * nx + iz * sxy; if (mask[i]) continue; if (mask[i - 1] || mask[i + 1] || mask[i - nx] || mask[i + nx] || mask[i - sxy] || mask[i + sxy]) m2[i] = 1; } mask.set(m2); }
     const T = new Float32Array(D.length);
-    for (let pass = 0; pass < 4; pass++) { T.set(D);
+    for (let pass = 0; pass < smoothN; pass++) { T.set(D);
       for (let iz = 1; iz < nz - 1; iz++) for (let iy = 1; iy < ny - 1; iy++) for (let ix = 1; ix < nx - 1; ix++) { const i = ix + iy * nx + iz * sxy; if (!mask[i]) continue;
         D[i] = (T[i] * 2 + T[i - 1] + T[i + 1] + T[i - nx] + T[i + nx] + T[i - sxy] + T[i + sxy]) / 8; } } }
   // openings: a box from just above the floor to door height, cut through the wall(s) to the room behind on each side
@@ -4816,7 +4875,7 @@ function fuseCluster(pieces, zOf, ev, opts) {
   const addCut = (ws, c, u, g, w) => { const along = ws === 0 || ws === 2, Y = g * H + Math.min(4, doorTop * 0.6);
     const X = along ? c : u, Z = along ? u : c, nxv = along ? 1 : 0, nzv = along ? 0 : 1;
     const dp = depthTo(X, Y, Z, nxv, nzv), dn = depthTo(X, Y, Z, -nxv, -nzv); if (dp < 0 || dn < 0) return false;
-    cuts.push({ along, c, u, w: Math.max(3, Math.min(10, w)), lo: -dn, hi: dp, y0: g * H + 0.05, y1: g * H + doorTop }); return true; };
+    cuts.push({ along, c, u, w: Math.max(3, Math.min(10, w)), lo: -Math.min(12, dn + clear), hi: Math.min(12, dp + clear), y0: g * H + 0.05, y1: g * H + doorTop }); return true; }; // the walk through each opening is kept clear for `clear` ft on each side
   if (open !== 'none' && ev) {
     for (const sm of ev.seams) if (sm.kind === 'B' || sm.kind === 'P') addCut(sm.ws, sm.c, sm.u, sm.g, sm.w || 4);
     if (open === 'touching') { // rooms that touch with no door between them get one
@@ -4834,8 +4893,22 @@ function fuseCluster(pieces, zOf, ev, opts) {
     for (let iz = iz0; iz <= iz1; iz++) for (let iy = iy0; iy <= iy1; iy++) for (let ix = ix0; ix <= ix1; ix++) {
       const qx = Math.abs(x0 + ix * v - cx) - hx, qy = Math.abs(y0 + iy * v - cy) - hy, qz = Math.abs(z0 + iz * v - cz) - hz;
       const box = Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0) - r, i = ix + iy * nx + iz * sxy; if (-box > D[i]) D[i] = -box; } }
-  const mesh = fuseNets(D, nx, ny, nz, v, x0, y0, z0);
-  return { mesh, voxel: v, cuts: cuts.length, slots: slotCuts.length, dims: [nx, ny, nz] };
+  return { D, nx, ny, nz, v, x0, y0, z0, voxel: v, cuts: cuts.length, slots: slotCuts.length, holes, dims: [nx, ny, nz], mesh: null };
+}
+// brush edits on top of a fused form: smooth (soften lumps), cut (remove), fill (add); each a sphere of radius r ft at p
+function fuseApplyOps(base, ops) {
+  const { nx, ny, nz, v, x0, y0, z0 } = base, sxy = nx * ny, D = (ops && ops.length) ? Float32Array.from(base.D) : base.D;
+  for (const op of ops || []) { const [px, py, pz] = op.p, r = Math.max(0.5, op.r || 2), R = op.t === 'smooth' ? r * 1.4 : r + 1;
+    const ix0 = Math.max(1, Math.floor((px - R - x0) / v)), ix1 = Math.min(nx - 2, Math.ceil((px + R - x0) / v)), iy0 = Math.max(1, Math.floor((py - R - y0) / v)), iy1 = Math.min(ny - 2, Math.ceil((py + R - y0) / v)), iz0 = Math.max(1, Math.floor((pz - R - z0) / v)), iz1 = Math.min(nz - 2, Math.ceil((pz + R - z0) / v));
+    if (op.t === 'smooth') { const T = new Float32Array(D.length);
+      for (let pass = 0; pass < 8; pass++) { for (let iz = iz0 - 1; iz <= iz1 + 1; iz++) for (let iy = iy0 - 1; iy <= iy1 + 1; iy++) for (let ix = ix0 - 1; ix <= ix1 + 1; ix++) { const i = ix + iy * nx + iz * sxy; T[i] = D[i]; }
+        for (let iz = iz0; iz <= iz1; iz++) for (let iy = iy0; iy <= iy1; iy++) for (let ix = ix0; ix <= ix1; ix++) { const d = Math.hypot(x0 + ix * v - px, y0 + iy * v - py, z0 + iz * v - pz); if (d > R) continue; const w = 1 - d / R, i = ix + iy * nx + iz * sxy;
+          const avg = (T[i - 1] + T[i + 1] + T[i - nx] + T[i + nx] + T[i - sxy] + T[i + sxy] + 2 * T[i]) / 8; D[i] = T[i] + (avg - T[i]) * w; } } continue; }
+    for (let iz = iz0; iz <= iz1; iz++) for (let iy = iy0; iy <= iy1; iy++) for (let ix = ix0; ix <= ix1; ix++) { const sd = Math.hypot(x0 + ix * v - px, y0 + iy * v - py, z0 + iz * v - pz) - r, i = ix + iy * nx + iz * sxy;
+      if (op.t === 'cut') { if (-sd > D[i]) D[i] = -sd; } else { const h = Math.max(1 - Math.abs(sd - D[i]), 0); const m = Math.min(sd, D[i]) - h * h * 0.25; if (m < D[i]) D[i] = m; } } }
+  return D;
+}
+function fuseMesh(base, ops) { const D = fuseApplyOps(base, ops); return fuseNets(D, base.nx, base.ny, base.nz, base.v, base.x0, base.y0, base.z0);
 }
 
 /* ---------------- Clusters workbench (the Tiling tab) ----------------
@@ -4928,13 +5001,14 @@ function fuseDataFor(id, cut) {
   const p = TL.pre.get(id), f = p && tileFeetFor(id); if (!p || !(p.F || p.fzKeep) || !f) return null;
   if (!p.fzKeep) { p.fzKeep = fuseKeepField(p.F, p.FR, p.mesh, p.r / p.FR); p.F = null; } // the kept field replaces the raw one (saves memory)
   let F = p.fzKeep; if (cut && p.cutMesh && (p.Fcut || p.fzCut)) { if (!p.fzCut) p.fzCut = p.Fcut ? fuseKeepField(p.Fcut, p.FR, p.cutMesh, p.r / p.FR) : p.fzKeep; p.Fcut = null; F = p.fzCut; }
-  return { F, R: p.FR, k: p.r / p.FR, map: f.map, height: f.height }; // mesh grid -> field grid
+  return { F, R: p.FR, k: p.r / p.FR, map: f.map, height: f.height, openBottom: !!p.openBottom }; // mesh grid -> field grid
 }
 function fuseSig(c, voxel) { return JSON.stringify([c.id, c.pieces.map((q) => [q.t, q.x, q.z, q.rot, !!q.mir, q.sc || 1, q.base]), TL.set.H, TILE_FT, TL.fuse.blend, TL.fuse.open, voxel, REF.items.map((it) => it.id + tileSig(it)).join()]); }
-function fuseNow(c, voxel) {
-  const ev = TL.ev || evaluateCluster(c.pieces, byIdFull(), 0), zs = new Map();
-  return fuseCluster(c.pieces, (i) => { const pc = c.pieces[i]; if (!refItem(pc.t)) return null; const cut = !!(ev.roofCut && ev.roofCut.has(i)), key = pc.t + (cut ? '|c' : '');
-    if (!zs.has(key)) zs.set(key, fuseDataFor(pc.t, cut)); return zs.get(key); }, ev, { H: TL.set.H, blend: TL.fuse.blend, open: TL.fuse.open, voxel });
+function fuseNow(c, voxel, set, ops) {
+  const ev = evaluateCluster(c.pieces, byIdFull(), 0), zs = new Map(), st = set || { blend: TL.fuse.blend, open: TL.fuse.open };
+  const base = fuseCluster(c.pieces, (i) => { const pc = c.pieces[i]; if (!refItem(pc.t)) return null; const cut = !!(ev.roofCut && ev.roofCut.has(i)), key = pc.t + (cut ? '|c' : '');
+    if (!zs.has(key)) zs.set(key, fuseDataFor(pc.t, cut)); return zs.get(key); }, ev, Object.assign({ H: TL.set.H, voxel }, st));
+  if (!base) return null; base.mesh = fuseMesh(base, ops || []); return base;
 }
 function fuseRequest(c) {
   const voxel = TILE_FT / (TL.set.detail || 64), sig = fuseSig(c, voxel); if (TL.fuse.sig === sig && TL.fuse.geom) return TL.fuse.geom;
@@ -5255,6 +5329,7 @@ async function startTiling() {
     TL.clusters = snap.docs.map((d) => { const x = Object.assign({ id: d.id }, d.data()); if (x.pieces) x.pieces.forEach((q) => { if ((q.sc || 1) >= 2) q.sc = 1.25; }); const m = mine.get(d.id); return m && (TL.saveT.has(d.id) || (drag && TL.cur === d.id)) ? m : x; });
     for (const [id, c] of mine) if (!TL.clusters.some((x) => x.id === id) && Date.now() - (c.createdAt || 0) < 4000) TL.clusters.push(c); // just made, not echoed yet
     if (tilingOn) { if (drag) renderClusterList(); else renderAll(); }
+    if (fuseOn) { fzRenderList(); const fc = fzCluster(), key = fc ? JSON.stringify([fc.fz, fc.pieces]) : ''; if (key !== FZ.applied && !TL.saveT.has(FZ.cur)) fzRefresh(); }
   }, () => { TL.local = true; TL.clusters = store.get('clusters', []); });
 }
 function showTiling(on) {
@@ -5268,6 +5343,99 @@ function showTiling(on) {
   } else if (!refineOn && state.res && curTypo) status(`${typoOf(curTypo).label} map · ${state.res.W}×${state.res.H} cells at ${state.res.R}³.`, 1);
 }
 startTiling();
+
+/* ---------------- Fuse step: one cluster as one form, joins perfected ---------------- */
+var fuseOn = false;
+var FZ = { cur: store.get('fzSel', null), tool: 'orbit', base: null, baseSig: '', mesh: null, tok: 0, framed: false };
+const FZ_DEF = { blend: 4, smooth: 6, clear: 2, holes: 80, open: 'blocked' };
+function fuseSent() { return TL.clusters.filter((c) => c.fz && c.fz.sent).sort((a, b) => a.fz.sent - b.fz.sent); }
+const fzCluster = () => TL.clusters.find((c) => c.id === FZ.cur && c.fz) || null;
+const fzCanvas = $('fzViewer'), fzr = new THREE.WebGLRenderer({ canvas: fzCanvas, antialias: true }); fzr.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+const fzScene = new THREE.Scene(); addLights(fzScene); const fzCam = new THREE.PerspectiveCamera(35, 1.6, 1, 5000); fzCam.position.set(160, 140, 200);
+const fzCtl = new OrbitControls(fzCam, fzCanvas); fzCtl.enableDamping = true; fzCtl.dampingFactor = 0.12; fzCtl.screenSpacePanning = true; fzCtl.zoomToCursor = true; fzCtl.zoomSpeed = 3;
+const fzGroup = new THREE.Group(); fzScene.add(fzGroup); fzScene.background = new THREE.Color(css('--viewer') || '#0a0c0f');
+const fzCursor = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), new THREE.MeshBasicMaterial({ color: 0xe2589a, transparent: true, opacity: 0.35, depthWrite: false })); fzCursor.visible = false; fzScene.add(fzCursor);
+function sizeFz() { const w = fzCanvas.clientWidth; if (!w) return; const h = Math.round(w * 0.66); fzr.setSize(w, h, false); fzCam.aspect = w / h; fzCam.updateProjectionMatrix(); }
+new ResizeObserver(sizeFz).observe(fzCanvas);
+(function fzloop() { if (fuseOn) { fzCtl.update(); fzr.render(fzScene, fzCam); } requestAnimationFrame(fzloop); })();
+function fzFrame() { const box = new THREE.Box3().setFromObject(fzGroup); if (box.isEmpty()) return; const c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length() / 2;
+  const dir = new THREE.Vector3(0.55, 0.5, 0.67).normalize(), dist = r / Math.sin(THREE.MathUtils.degToRad(fzCam.fov / 2)) * 0.95;
+  fzCtl.target.copy(c); fzCam.position.copy(c).addScaledVector(dir, dist); fzCam.near = dist / 100; fzCam.far = dist * 20; fzCam.updateProjectionMatrix(); fzCtl.update(); FZ.framed = true; }
+fzCanvas.addEventListener('dblclick', fzFrame);
+const fzSet = (c) => Object.assign({}, FZ_DEF, (c && c.fz && c.fz.set) || {});
+function fzRenderControls() {
+  const c = fzCluster(), st = fzSet(c);
+  const fmt = { fzBlend: (x) => x + ' ft', fzSmooth: (x) => String(x), fzClear: (x) => x + ' ft', fzHoles: (x) => (+x ? x + ' sq ft' : 'ground only') };
+  for (const [id, key] of [['fzBlend', 'blend'], ['fzSmooth', 'smooth'], ['fzClear', 'clear'], ['fzHoles', 'holes']]) { $(id).value = st[key]; $(id + 'Out').value = fmt[id](st[key]); }
+  $('fzOpen').value = st.open; const n = c && c.fz.ops ? c.fz.ops.length : 0;
+  $('fzEdits').textContent = n ? `${n} brush edit${n > 1 ? 's' : ''} on this cluster.` : 'No brush edits yet.'; $('fzUndo').disabled = !n; $('fzClearEdits').disabled = !n;
+  ['fzExport', 'fzBack', 'fzRemove'].forEach((id) => ($(id).disabled = !c));
+}
+function fzRenderList() {
+  const box = $('fzList'), list = fuseSent(); $('fzCount').textContent = list.length; box.innerHTML = '';
+  if (!list.length) { box.innerHTML = '<p class="note">Nothing sent yet.</p>'; return; }
+  for (const c of list) { const b = document.createElement('button'); b.className = 'clitem' + (c.id === FZ.cur ? ' on' : ''); b.innerHTML = `${esc(c.name)}<small>${c.pieces.length} pieces${c.fz.ops && c.fz.ops.length ? ` · ${c.fz.ops.length} edits` : ''}</small>`;
+    b.addEventListener('click', () => { FZ.cur = c.id; store.set('fzSel', c.id); FZ.framed = false; fzRefresh(true); }); box.appendChild(b); }
+}
+function fzShowMesh(mesh) {
+  while (fzGroup.children.length) { const o = fzGroup.children.pop(); if (o.geometry) o.geometry.dispose(); }
+  if (!mesh) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3)); g.setIndex(new THREE.BufferAttribute(mesh.indices, 1)); g.computeVertexNormals();
+  fzGroup.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0xdedbd5, roughness: 0.75, metalness: 0, side: THREE.DoubleSide }))); if (!FZ.framed) fzFrame();
+}
+// full rebuild when the cluster or the transition settings change; brush edits only re-mesh the stored form
+async function fzRefresh(full) {
+  fzRenderList(); fzRenderControls(); const c = fzCluster();
+  $('fzTitle').textContent = c ? c.name : (fuseSent().length ? 'Pick a cluster on the left' : 'No cluster sent yet');
+  if (!c) { fzShowMesh(null); $('fzStats').textContent = ''; FZ.applied = ''; return; }
+  FZ.applied = JSON.stringify([c.fz, c.pieces]);
+  const tok = ++FZ.tok; const voxel = TILE_FT / (TL.set.detail || 64), st = fzSet(c), sig = JSON.stringify([fuseSig(c, voxel), st]);
+  if (full || FZ.baseSig !== sig) {
+    if (!(await ensureTiles())) return; if (tok !== FZ.tok) return;
+    status(`Fuse · building ${c.name} as one form…`); await new Promise((r) => setTimeout(r, 30)); if (tok !== FZ.tok) return;
+    let out = null; try { out = fuseNow(c, voxel, st, []); } catch (e) { console.warn('fuse', e); toast('Could not fuse this cluster.'); return; }
+    if (!out || tok !== FZ.tok) return; FZ.base = out; FZ.baseSig = sig;
+    $('fzStats').textContent = `${out.cuts} opening${out.cuts === 1 ? '' : 's'} through walls · ${out.slots} low slot${out.slots === 1 ? '' : 's'} raised to 7 ft · floor holes patched on ${out.holes} level${out.holes === 1 ? '' : 's'}`;
+  }
+  const t0 = performance.now(); FZ.mesh = fuseMesh(FZ.base, c.fz.ops || []); fzShowMesh(FZ.mesh);
+  status(`Fuse · ${c.name} · one continuous form${c.fz.ops && c.fz.ops.length ? ` with ${c.fz.ops.length} brush edit${c.fz.ops.length > 1 ? 's' : ''}` : ''}.`, 1);
+}
+function fzUpdate(patch, full) { const c = fzCluster(); if (!c) return; c.fz = Object.assign({}, c.fz, patch); saveCluster(c); fzRefresh(full); }
+for (const [id, key, fmt] of [['fzBlend', 'blend', (x) => x + ' ft'], ['fzSmooth', 'smooth', (x) => String(x)], ['fzClear', 'clear', (x) => x + ' ft'], ['fzHoles', 'holes', (x) => (+x ? x + ' sq ft' : 'ground only')]]) {
+  $(id).addEventListener('input', (e) => { $(id + 'Out').value = fmt(e.target.value); });
+  $(id).addEventListener('change', (e) => { const c = fzCluster(); if (c) fzUpdate({ set: Object.assign(fzSet(c), { [key]: +e.target.value }) }, true); }); }
+$('fzOpen').addEventListener('change', (e) => { const c = fzCluster(); if (c) fzUpdate({ set: Object.assign(fzSet(c), { open: e.target.value }) }, true); });
+$('fzRad').addEventListener('input', (e) => { $('fzRadOut').value = e.target.value + ' ft'; });
+$('fzTool').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; FZ.tool = b.dataset.t; for (const x of $('fzTool').children) x.setAttribute('aria-pressed', String(x === b)); fzCanvas.classList.toggle('brush', FZ.tool !== 'orbit'); fzCursor.visible = false; });
+$('fzUndo').addEventListener('click', () => { const c = fzCluster(); if (!c || !(c.fz.ops || []).length) return; fzUpdate({ ops: c.fz.ops.slice(0, -1) }); });
+$('fzClearEdits').addEventListener('click', () => { const c = fzCluster(); if (!c) return; fzUpdate({ ops: [] }); });
+$('fzBack').addEventListener('click', () => { const c = fzCluster(); if (!c) return; showFuse(false); showTiling(true); openCluster(c.id); });
+$('fzRemove').addEventListener('click', () => { const c = fzCluster(); if (!c) return; c.fz = null; saveCluster(c); FZ.cur = null; fzRefresh(); toast('Removed from Fuse. The cluster itself is unchanged.'); });
+$('fzExport').addEventListener('click', async () => { const c = fzCluster(); if (!c || !FZ.mesh) return; await saveFusedSTL(FZ.mesh, c.name); });
+// brush: click (not drag) on the surface
+{ const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(); let down = null;
+  const hit = (e) => { const r = fzCanvas.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); ray.setFromCamera(ndc, fzCam); const h = ray.intersectObjects(fzGroup.children, false); return h[0] || null; };
+  fzCanvas.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; });
+  fzCanvas.addEventListener('pointermove', (e) => { if (FZ.tool === 'orbit' || e.buttons) return; const h = hit(e); fzCursor.visible = !!h; if (h) { fzCursor.position.copy(h.point); fzCursor.scale.setScalar(+$('fzRad').value); } });
+  fzCanvas.addEventListener('pointerup', (e) => { if (FZ.tool === 'orbit' || !down || e.button !== 0 || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return; const c = fzCluster(), h = hit(e); if (!c || !h) return;
+    const p = h.point, n = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : new THREE.Vector3(), r = +$('fzRad').value;
+    const at = FZ.tool === 'fill' ? p.clone().addScaledVector(n, -r * 0.3) : FZ.tool === 'cut' ? p.clone().addScaledVector(n, -r * 0.3) : p; // sit the sphere a little into the surface
+    fzUpdate({ ops: (c.fz.ops || []).concat([{ t: FZ.tool, p: [at.x, at.y, at.z].map((x) => Math.round(x * 100) / 100), r }]) }); }); }
+async function saveFusedSTL(mesh, name) {
+  const P = mesh.positions, I = mesh.indices, nt = I.length / 3, buf = new ArrayBuffer(84 + nt * 50), dv = new DataView(buf); const hdr = 'SubD cluster, fused (feet, Z up)'; for (let q = 0; q < hdr.length; q++) dv.setUint8(q, hdr.charCodeAt(q)); dv.setUint32(80, nt, true);
+  let o = 84; const vt = (v) => [P[3 * v], -P[3 * v + 2], P[3 * v + 1]];
+  for (let t = 0; t < I.length; t += 3) { const a = vt(I[t]), b = vt(I[t + 1]), cc = vt(I[t + 2]); const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = cc[0] - a[0], vy = cc[1] - a[1], vz = cc[2] - a[2]; let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz) || 1;
+    dv.setFloat32(o, nx / l, true); dv.setFloat32(o + 4, ny / l, true); dv.setFloat32(o + 8, nz / l, true); o += 12; for (const q of [a, b, cc]) { dv.setFloat32(o, q[0], true); dv.setFloat32(o + 4, q[1], true); dv.setFloat32(o + 8, q[2], true); o += 12; } dv.setUint16(o, 0, true); o += 2; }
+  const nm = safe(name) + '-fused'; status('Packing…', 1); await save(nm + '.zip', C.zip([{ name: nm + '.stl', data: new Uint8Array(buf) }]));
+}
+$('tToFuse').addEventListener('click', () => { const c = curCluster(); if (!c || !c.pieces.length) { toast('Open a cluster first.'); return; }
+  if (!c.fz) { c.fz = { sent: Date.now(), set: Object.assign({}, FZ_DEF, { blend: TL.fuse.blend, open: TL.fuse.open }), ops: [] }; saveCluster(c); }
+  FZ.cur = c.id; store.set('fzSel', c.id); FZ.framed = false; showFuse(true); });
+function showFuse(on) {
+  if (on && state.running) { toast('Wait for the SOM run to finish.'); return; }
+  if (on) { if (refineOn) showRefine(false); if (tilingOn) showTiling(false); }
+  fuseOn = on; document.body.classList.toggle('fuse-mode', on); $('fuseApp').hidden = !on; renderTypoTabs();
+  if (on) { if (!fzCluster() && fuseSent().length) FZ.cur = fuseSent()[fuseSent().length - 1].id; requestAnimationFrame(() => { sizeFz(); fzRefresh(); }); prepAll(); }
+}
 
 /* ---------------- boot ---------------- */
 renderCrit(); renderSettings(); renderModels(); renderPicks(); renderInspector(); sizeViewer(); sizeMap();
