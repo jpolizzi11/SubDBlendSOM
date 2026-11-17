@@ -426,6 +426,11 @@ details.sub > .settings { padding-bottom: 6px; }
           <span class="rangerow"><input type="range" id="rOut" min="0" max="0.4" step="0.01" value="0"><output id="rOutOut">0%</output></span>
           <label for="rSmooth">Smooth out grain<small>Removes the small voxel steps left on curved and levelled surfaces.</small></label><input type="checkbox" id="rSmooth" checked>
         </div>
+        <p class="subh">Thin thick mass</p>
+        <div class="settings" style="margin-top:8px">
+          <label for="rThin">Max wall thickness<small>Solid thicker than about twice this is hollowed back to this thickness, and the hollow opens onto the room beside or below it, so rooms grow into heavy masses and you get new pockets of space. Floors are never holed. Off = as blended.</small></label>
+          <span class="rangerow"><input type="range" id="rThin" min="0" max="6" step="0.5" value="0"><output id="rThinOut">Off</output></span>
+        </div>
         <p class="subh">Floors</p>
         <div class="settings" style="margin-top:8px">
           <label for="rFloor">Floor flatness<small>0% = as blended. 100% = every floor area is perfectly level.</small></label>
@@ -3491,7 +3496,7 @@ const FACE_NAMES = ['Top (+Z)', 'Bottom (−Z)', 'Side +X', 'Side −X', 'Side +
 // internal frame is Y-up; exported STLs are Z-up ([x, -z, y]): +Y side in Rhino = internal -z
 const FACE_AX = [[1, 1], [1, -1], [0, 1], [0, -1], [2, -1], [2, 1]];
 const FACE_MAX = 0.3;
-const defSet = () => ({ floor: 0, slope: 20, show: true, faces: [0, 0, 0, 0, 0, 0], outside: 0, smooth: true, single: false, del: [] });
+const defSet = () => ({ floor: 0, slope: 20, show: true, faces: [0, 0, 0, 0, 0, 0], outside: 0, thin: 0, smooth: true, single: false, del: [] });
 const AUTO = { outside: 0.2, floor: 1, slope: 20, smooth: true };
 const refItem = (id) => REF.items.find((x) => x.id === id);
 
@@ -3695,10 +3700,56 @@ function meshComps(mesh) {
   return { vc, tc, sizes };
 }
 // The full refine pipeline. outR (optional) gives a lighter mesh for tiling previews; floors and pieces follow the same rules.
+// Thin thick mass: wherever the solid is thicker than about 2 x T (fat piers, heavy overhead masses), its core is removed
+// so only T of wall is left, and that hollow is opened onto the room beside or below it - the room grows into the old mass.
+// Hollows are never opened upward (floors never get pits); hollows that would stay sealed, or are too small to use, are filled back.
+function thinMass(F, R, base, Tft) {
+  const R2 = R * R, N = R2 * R, ext = ((base.mx[0] - base.mn[0]) + (base.mx[2] - base.mn[2])) / 2, ftv = TILE_FT / Math.max(1, ext);
+  const Tv = Math.max(1, Tft / ftv), minVol = Math.pow(3 / ftv, 3);
+  // 1. core: solid deeper than T from every surface
+  const lab = new Int32Array(N).fill(-1), core = new Uint8Array(N);
+  for (let i = 0; i < N; i++) if (F[i] < 0 && -F[i] * R > Tv) core[i] = 1;
+  const sizes = [], st = new Int32Array(N); let nl = 0;
+  for (let i0 = 0; i0 < N; i0++) { if (!core[i0] || lab[i0] >= 0) continue; let sp = 0, n = 0; st[sp++] = i0; lab[i0] = nl;
+    while (sp) { const c = st[--sp]; n++; const x = c % R, y = ((c / R) | 0) % R, z = (c / R2) | 0;
+      if (x > 0 && core[c - 1] && lab[c - 1] < 0) { lab[c - 1] = nl; st[sp++] = c - 1; } if (x < R - 1 && core[c + 1] && lab[c + 1] < 0) { lab[c + 1] = nl; st[sp++] = c + 1; }
+      if (y > 0 && core[c - R] && lab[c - R] < 0) { lab[c - R] = nl; st[sp++] = c - R; } if (y < R - 1 && core[c + R] && lab[c + R] < 0) { lab[c + R] = nl; st[sp++] = c + R; }
+      if (z > 0 && core[c - R2] && lab[c - R2] < 0) { lab[c - R2] = nl; st[sp++] = c - R2; } if (z < R - 1 && core[c + R2] && lab[c + R2] < 0) { lab[c + R2] = nl; st[sp++] = c + R2; } }
+    sizes.push(n); nl++; }
+  if (!nl) return F;
+  // 2. covered air: empty space with solid somewhere above it (inside the building, not open sky)
+  const covered = new Uint8Array(N);
+  for (let z = 0; z < R; z++) for (let x = 0; x < R; x++) { let roof = false; for (let y = R - 1; y >= 0; y--) { const i = x + y * R + z * R2; if (F[i] < 0) roof = true; else if (roof) covered[i] = 1; } }
+  // 3. distances through the remaining shell: from the cores (sideways or downward) and from covered air (sideways or upward)
+  const lim = Math.min(250, Math.ceil(Tv * 1.7 + 3)), bfs = (seed, up) => { const d = new Uint8Array(N).fill(255), src = new Int32Array(N).fill(-1); let qa = new Int32Array(N), qn = 0;
+    for (let i = 0; i < N; i++) if (seed(i)) { d[i] = 0; src[i] = lab[i]; qa[qn++] = i; }
+    for (let h = 0; h < qn; h++) { const c = qa[h], dc = d[c]; if (dc >= lim) continue; const x = c % R, y = ((c / R) | 0) % R, z = (c / R2) | 0;
+      const nb = [x > 0 ? c - 1 : -1, x < R - 1 ? c + 1 : -1, z > 0 ? c - R2 : -1, z < R - 1 ? c + R2 : -1, up ? (y < R - 1 ? c + R : -1) : (y > 0 ? c - R : -1)];
+      for (const q of nb) { if (q < 0 || d[q] !== 255 || !(F[q] < 0) || core[q]) continue; d[q] = dc + 1; src[q] = src[c]; qa[qn++] = q; } }
+    return { d, src }; };
+  const fromCore = bfs((i) => core[i] && sizes[lab[i]] >= minVol, false), fromIn = bfs((i) => covered[i], true), fromAny = bfs((i) => !(F[i] < 0), true);
+  // open onto covered (indoor) space where a core touches it; otherwise onto whatever air is beside or below it
+  const opened = new Uint8Array(nl), indoor = new Uint8Array(nl), wall = new Uint8Array(N), reach = Tv * 1.7 + 3;
+  for (let i = 0; i < N; i++) { const a = fromCore.d[i], b = fromIn.d[i]; if (a === 255 || b === 255 || a === 0 || b === 0) continue; if (a + b <= reach) indoor[fromCore.src[i]] = 1; }
+  for (let i = 0; i < N; i++) { const a = fromCore.d[i]; if (a === 255 || a === 0) continue; const k = fromCore.src[i], b = indoor[k] ? fromIn.d[i] : fromAny.d[i]; if (b === 255 || b === 0) continue; if (a + b <= reach) { wall[i] = 1; opened[k] = 1; } }
+  // 4. carve: opened cores become space with a smooth T-thick wall around them; the shell between core and room goes
+  const out = Float32Array.from(F), t = Tv / R, changed = new Uint8Array(N); let removed = 0;
+  for (let i = 0; i < N; i++) {
+    if (core[i] && opened[lab[i]] && sizes[lab[i]] >= minVol) { out[i] = Math.max(F[i], -F[i] - t); changed[i] = 1; removed++; }
+    else if (wall[i] && opened[fromCore.src[i]]) { out[i] = Math.max(F[i], 0.75 / R); changed[i] = 1; removed++; }
+  }
+  if (!removed) return F;
+  // 5. soften the new surfaces
+  for (let pass = 0; pass < 2; pass++) { const T2 = Float32Array.from(out);
+    for (let z = 1; z < R - 1; z++) for (let y = 1; y < R - 1; y++) for (let x = 1; x < R - 1; x++) { const i = x + y * R + z * R2;
+      if (!(changed[i] || changed[i - 1] || changed[i + 1] || changed[i - R] || changed[i + R] || changed[i - R2] || changed[i + R2])) continue;
+      out[i] = (T2[i] * 2 + T2[i - 1] + T2[i + 1] + T2[i - R] + T2[i + R] + T2[i - R2] + T2[i + R2]) / 8; } }
+  out.thinned = removed; return out;
+}
 async function refPipeline(it, outR, mod) {
   const base = await refBase(it); const c = REF.cache.get(it.id); const R = base.R, s = it.set;
-  const fk = s.faces.join(',') + '|' + (s.outside || 0);
-  if (!c.cut || c.cut.k !== fk) c.cut = { k: fk, field: s.outside > 0 ? flatOutside(base.field, R, base, s.outside, s.faces) : cutFaces(base, s.faces) };
+  const fk = s.faces.join(',') + '|' + (s.outside || 0) + '|' + (s.thin || 0);
+  if (!c.cut || c.cut.k !== fk) { const f0 = s.outside > 0 ? flatOutside(base.field, R, base, s.outside, s.faces) : cutFaces(base, s.faces); c.cut = { k: fk, field: s.thin > 0 ? thinMass(f0, R, base, s.thin) : f0 }; }
   const L = levelFloors2(c.cut.field, R, s.floor, s.slope);
   const Fs = s.smooth ? smooth3(L.field, R, 1) : L.field, Fm = mod ? mod(Fs) : Fs;
   const r = outR && outR < R ? outR : R, k = r / R;
@@ -3770,7 +3821,7 @@ function renderRefControls() {
   const s = it.set;
   $('rFloor').value = s.floor; $('rFloorOut').value = Math.round(s.floor * 100) + '%';
   $('rSlope').value = s.slope; $('rSlopeOut').value = s.slope + '°';
-  $('rShow').checked = !!s.show; $('rOut').value = s.outside || 0; $('rOutOut').value = Math.round((s.outside || 0) * 100) + '%'; $('rSmooth').checked = s.smooth !== false; $('rSingle').checked = !!s.single; renderPickUI();
+  $('rThin').value = s.thin || 0; $('rThinOut').value = s.thin ? s.thin + ' ft' : 'Off'; $('rShow').checked = !!s.show; $('rOut').value = s.outside || 0; $('rOutOut').value = Math.round((s.outside || 0) * 100) + '%'; $('rSmooth').checked = s.smooth !== false; $('rSingle').checked = !!s.single; renderPickUI();
   const allSame = s.faces.every((v) => v === s.faces[0]);
   $('rAll').value = allSame ? s.faces[0] : 0; $('rAllOut').value = allSame ? Math.round(s.faces[0] * 100) + '%' : 'mixed';
   s.faces.forEach((v, k) => { $('rF' + k).value = v; $('rF' + k + 'Out').value = Math.round(v * 100) + '%'; });
@@ -3789,6 +3840,8 @@ $('rShow').addEventListener('change', (e) => { const it = refItem(REF.sel); if (
 $('rAll').addEventListener('input', (e) => { const it = refItem(REF.sel); if (it) { it.set.faces = it.set.faces.map(() => +e.target.value); refChanged(true); } });
 FACE_NAMES.forEach((_, k) => $('rF' + k).addEventListener('input', (e) => { const it = refItem(REF.sel); if (it) { it.set.faces[k] = +e.target.value; refChanged(true); } }));
 $('rOut').addEventListener('input', (e) => { const it = refItem(REF.sel); if (it) { it.set.outside = +e.target.value; refChanged(true); } });
+$('rThin').addEventListener('input', (e) => { $('rThinOut').value = +e.target.value ? e.target.value + ' ft' : 'Off'; });
+$('rThin').addEventListener('change', (e) => { const it = refItem(REF.sel); if (it) { it.set.thin = +e.target.value; refChanged(true); if (it.set.thin) toast('Thinning ' + it.name + ' to ' + it.set.thin + ' ft walls…'); } });
 $('rSmooth').addEventListener('change', (e) => { const it = refItem(REF.sel); if (it) { it.set.smooth = e.target.checked; refChanged(true); } });
 $('rSingle').addEventListener('change', (e) => { const it = refItem(REF.sel); if (it) { it.set.single = e.target.checked; refChanged(true); } });
 $('refDel').addEventListener('click', () => { const it = refItem(REF.sel); if (!it || !REF.pick) return; it.set.del = [...(it.set.del || []), REF.pick.point.map((v) => Math.round(v * 100) / 100)]; REF.pick = null; refChanged(true); toast('Piece deleted. Bring it back any time.'); });
