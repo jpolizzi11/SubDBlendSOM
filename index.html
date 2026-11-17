@@ -535,7 +535,10 @@ details.sub > .settings { padding-bottom: 6px; }
     <section class="panel">
       <h2>3D <span class="actions" style="margin:0"><details class="menu"><summary class="btn small">View</summary><div class="menu-list">
         <div class="mrow"><span>Colour</span><select id="tColor" aria-label="Colour"><option value="clay">Clay</option><option value="program">Ground / upper tiles</option><option value="tile">By tile</option></select></div>
-        <label class="mrow"><input type="checkbox" id="tSeamsChk" checked> Show passages</label><label class="mrow"><input type="checkbox" id="tLevels" checked> Show floor levels</label></div></details><button class="btn small primary" id="tileExport">Cluster STL .zip</button></span></h2>
+        <label class="mrow"><input type="checkbox" id="tSeamsChk" checked> Show passages</label>
+        <div class="mrow" style="border-top:1px solid var(--line);margin-top:4px;padding-top:8px"><b style="color:var(--ink)">Fuse</b></div>
+        <div class="mrow"><span>Seam blend</span><span class="rangerow" style="min-width:120px"><input type="range" id="tFuseBlend" min="2" max="8" step="0.5" value="4"><output id="tFuseBlendOut">4 ft</output></span></div>
+        <div class="mrow"><span>Openings</span><select id="tFuseOpen"><option value="none">None</option><option value="blocked" selected>Where a door meets a wall</option><option value="touching">…and between touching rooms</option></select></div><label class="mrow"><input type="checkbox" id="tLevels" checked> Show floor levels</label></div></details><label class="note" style="margin:0;display:flex;gap:6px;align-items:center" title="Blend all pieces into one seamless form and open walls where doors meet them"><input type="checkbox" id="tFuse"> Fuse</label><button class="btn small primary" id="tileExport">Cluster STL .zip</button></span></h2>
       <canvas id="tileViewer"></canvas>
       <div class="vhint" style="padding:6px 14px 0">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. Green lines are the shared floor levels.</div>
       <p class="note pad" id="tileStats" style="margin:0"></p>
@@ -3957,7 +3960,7 @@ function tileFeet(mesh, levels, H) {
   for (let v = 0; v < used.length; v++) { out[3 * v] = (P[3 * v] - mn[0]) * sx - TILE_FT / 2; out[3 * v + 1] = warp((P[3 * v + 1] - mn[1]) * sy); out[3 * v + 2] = (P[3 * v + 2] - mn[2]) * sz - TILE_FT / 2; }
   const warpGrid = (yg) => warp((yg - mn[1]) * sy);
   const floorsL = knots.slice(1, -1).map((k) => k[1]); const storeys = Math.round(Math.max(0, ...floorsL) / H) + 1;
-  return { positions: out, indices: I, height: knots[knots.length - 1][1], floors: floorsL, floorN: knots.slice(1, -1).map((k) => k[2]), storeys, warpGrid };
+  return { positions: out, indices: I, height: knots[knots.length - 1][1], floors: floorsL, floorN: knots.slice(1, -1).map((k) => k[2]), storeys, warpGrid, map: { mn, sx, sy, sz, knots: knots.map((q) => [q[0], q[1]]) } };
 }
 // Each site cell's role from where it sits: sides facing the outside (or a void) make it an edge (one) or a corner (two adjacent).
 function cellRoles(W, D, isVoid) {
@@ -4304,8 +4307,8 @@ function evaluateCluster(pieces, tileById, H) {
         for (const nb of nbs) { const B = ps[nb.j], fb = worldFace(B.pc, B.t, opp, g);
           if (fb) { contacts.push([nb.o0, nb.o1]);
             if (i < nb.j) { // judge each shared edge once, from both sides
-              for (const [a0, a1] of fa.doors) for (const [b0, b1] of fb.doors) { const o = ovl(Math.max(a0, nb.o0), Math.min(a1, nb.o1), b0, b1); if (o >= 3) { res.passages++; res.pass[i]++; res.pass[nb.j]++; uni(i, nb.j); { const a = wfind(i), b = wfind(nb.j); if (a !== b) wpar[a] = b; } res.seams.push({ kind: 'P', ws, c: e.c, u: (Math.max(a0, b0, nb.o0) + Math.min(a1, b1, nb.o1)) / 2, g }); } }
-              const check = (dd, other, ii) => { for (const [d0, d1] of dd) { const c0 = Math.max(d0, nb.o0), c1 = Math.min(d1, nb.o1); if (c1 - c0 < 3) continue; if (!other.some(([b0, b1]) => ovl(c0, c1, b0, b1) >= 3)) { res.blocked++; res.bad.add(ii); res.seams.push({ kind: 'B', ws, c: e.c, u: (c0 + c1) / 2, g }); } } };
+              for (const [a0, a1] of fa.doors) for (const [b0, b1] of fb.doors) { const o = ovl(Math.max(a0, nb.o0), Math.min(a1, nb.o1), b0, b1); if (o >= 3) { res.passages++; res.pass[i]++; res.pass[nb.j]++; uni(i, nb.j); { const a = wfind(i), b = wfind(nb.j); if (a !== b) wpar[a] = b; } res.seams.push({ kind: 'P', ws, c: e.c, u: (Math.max(a0, b0, nb.o0) + Math.min(a1, b1, nb.o1)) / 2, g, w: o }); } }
+              const check = (dd, other, ii) => { for (const [d0, d1] of dd) { const c0 = Math.max(d0, nb.o0), c1 = Math.min(d1, nb.o1); if (c1 - c0 < 3) continue; if (!other.some(([b0, b1]) => ovl(c0, c1, b0, b1) >= 3)) { res.blocked++; res.bad.add(ii); res.seams.push({ kind: 'B', ws, c: e.c, u: (c0 + c1) / 2, g, w: c1 - c0 }); } } };
               check(fa.doors, fb.doors, i); check(fb.doors, fa.doors, nb.j);
             } }
           else if (pTop(B.pc, B.t) === g) contacts.push([nb.o0, nb.o1, 'roof']); }
@@ -4695,13 +4698,111 @@ function generateFormation(progKey, tiles, fits, ru, rand, rows, cols, opts) {
   return best;
 }
 
+/* ---------------- Fuse: one seamless form for a whole cluster ----------------
+   Every piece is sampled from its own 3D field into one shared grid for the cluster. Where two pieces meet, their surfaces
+   blend smoothly over the seam-blend distance (gaps close, near-flush faces become one surface, floors at the same level run
+   on without a lip). Away from the seams each model keeps its own form. Openings are then cut where a door meets a wall
+   (and, optionally, between rooms that touch with no door), so the whole cluster can be walked through. */
+// keep only the solid parts of a tile's field that its final mesh kept (deleted / floating pieces stay gone)
+function fuseKeepField(F, R, mesh, k) {
+  const R2 = R * R, N = R2 * R, lab = new Int32Array(N).fill(-1); let nl = 0; const st = [];
+  for (let i = 0; i < N; i++) { if (F[i] >= 0 || lab[i] >= 0) continue; lab[i] = nl; st.push(i);
+    while (st.length) { const c = st.pop(), x = c % R, y = ((c / R) | 0) % R, z = (c / R2) | 0;
+      for (const [d, ok] of [[1, x < R - 1], [-1, x > 0], [R, y < R - 1], [-R, y > 0], [R2, z < R - 1], [-R2, z > 0]]) { if (!ok) continue; const q = c + d; if (F[q] < 0 && lab[q] < 0) { lab[q] = nl; st.push(q); } } }
+    nl++; }
+  const keep = new Uint8Array(nl), P = mesh.positions, used = new Uint8Array(P.length / 3); for (const v of mesh.indices) used[v] = 1;
+  for (let v = 0; v < used.length; v++) { if (!used[v]) continue; const fx = P[3 * v] / k - 0.5, fy = P[3 * v + 1] / k - 0.5, fz = P[3 * v + 2] / k - 0.5;
+    for (let dz = 0; dz <= 1; dz++) for (let dy = 0; dy <= 1; dy++) for (let dx = 0; dx <= 1; dx++) { const x = Math.floor(fx) + dx, y = Math.floor(fy) + dy, z = Math.floor(fz) + dz;
+      if (x < 0 || y < 0 || z < 0 || x >= R || y >= R || z >= R) continue; const l = lab[x + y * R + z * R2]; if (l >= 0) keep[l] = 1; } }
+  const out = Float32Array.from(F); for (let i = 0; i < N; i++) if (lab[i] >= 0 && !keep[lab[i]]) out[i] = 1 / R;
+  return out;
+}
+function fuseUnwarp(knots) { // world ft above the piece's base -> ft in the model before floors were snapped
+  return (yw) => { let k = 1; while (k < knots.length - 1 && yw > knots[k][1]) k++;
+    const [a0, b0] = knots[k - 1], [a1, b1] = knots[k]; return b1 === b0 ? a0 : a0 + (yw - b0) * (a1 - a0) / (b1 - b0); };
+}
+// trilinear sample of a cubic field (value at voxel i sits at coordinate i + 0.5)
+function fuseSample(F, R, qx, qy, qz) {
+  const fx = qx - 0.5, fy = qy - 0.5, fz = qz - 0.5; if (fx < 0 || fy < 0 || fz < 0 || fx > R - 1 || fy > R - 1 || fz > R - 1) return 1;
+  const x = Math.min(R - 2, Math.floor(fx)), y = Math.min(R - 2, Math.floor(fy)), z = Math.min(R - 2, Math.floor(fz)), tx = fx - x, ty = fy - y, tz = fz - z, R2 = R * R, i = x + y * R + z * R2;
+  const l = (a, b, t) => a + (b - a) * t;
+  return l(l(l(F[i], F[i + 1], tx), l(F[i + R], F[i + R + 1], tx), ty), l(l(F[i + R2], F[i + R2 + 1], tx), l(F[i + R2 + R], F[i + R2 + R + 1], tx), ty), tz);
+}
+// one piece's signed distance in feet (negative inside) at a world point
+function fusePieceSDF(pc, z, H) { // z = { F, R, k, r, map }
+  const m = z.map, uw = z.unwarp || (z.unwarp = fuseUnwarp(m.knots)), ftPer = m.sx * z.k; // feet per full-grid voxel
+  return (X, Y, Z) => { const [lx, lz] = fromWorld(pc, X, Z); const ux = (lx + TILE_FT / 2) / m.sx + m.mn[0], uz = (lz + TILE_FT / 2) / m.sz + m.mn[2], uy = m.mn[1] + uw(Y - pc.base * H) / m.sy;
+    return fuseSample(z.F, z.R, ux / z.k, uy / z.k, uz / z.k) * z.R * ftPer * (pc.sc || 1); };
+}
+function fuseNets(D, nx, ny, nz, v, ox, oy, oz) {
+  const sxy = nx * ny, cell = new Int32Array(nx * ny * nz).fill(-1), pos = [], idx = [], g = new Float32Array(8);
+  const CO = []; for (let i = 0; i < 8; i++) CO.push([i & 1, (i >> 1) & 1, (i >> 2) & 1]);
+  const ED = []; for (let i = 0; i < 8; i++) for (let j = 0; j < 3; j++) { const k = i ^ (1 << j); if (k > i) ED.push([i, k]); }
+  const off = CO.map(([a, b, c]) => a + b * nx + c * sxy);
+  for (let z = 0; z < nz - 1; z++) for (let y = 0; y < ny - 1; y++) for (let x = 0; x < nx - 1; x++) {
+    const c = x + y * nx + z * sxy; let mask = 0; for (let k = 0; k < 8; k++) { const val = D[c + off[k]]; g[k] = val; if (val < 0) mask |= 1 << k; }
+    if (mask === 0 || mask === 255) continue; let vx = 0, vy = 0, vz = 0, n = 0;
+    for (const [a, b] of ED) { if (((mask >> a) & 1) === ((mask >> b) & 1)) continue; const t = g[a] / (g[a] - g[b]); vx += CO[a][0] + t * (CO[b][0] - CO[a][0]); vy += CO[a][1] + t * (CO[b][1] - CO[a][1]); vz += CO[a][2] + t * (CO[b][2] - CO[a][2]); n++; }
+    cell[c] = pos.length / 3; pos.push(ox + (x + vx / n) * v, oy + (y + vy / n) * v, oz + (z + vz / n) * v);
+    for (let ax = 0; ax < 3; ax++) { if (((mask & 1) !== 0) === (((mask >> (1 << ax)) & 1) !== 0)) continue;
+      const iu = (ax + 1) % 3, iv = (ax + 2) % 3, co = [x, y, z]; if (co[iu] === 0 || co[iv] === 0) continue;
+      const du = [1, nx, sxy][iu], dv = [1, nx, sxy][iv], q0 = cell[c], q1 = cell[c - du], q2 = cell[c - du - dv], q3 = cell[c - dv]; if (q1 < 0 || q2 < 0 || q3 < 0) continue;
+      if (mask & 1) idx.push(q0, q1, q2, q0, q2, q3); else idx.push(q0, q3, q2, q0, q2, q1); } }
+  return { positions: new Float32Array(pos), indices: new Uint32Array(idx) };
+}
+// pieces: cluster pieces; zOf(i) -> sampling data for piece i (or null); ev: evaluateCluster result; opts: { blend, open: 'none'|'blocked'|'touching', H, voxel }
+function fuseCluster(pieces, zOf, ev, opts) {
+  const H = opts.H, k = Math.max(0.5, opts.blend || 4), open = opts.open || 'blocked';
+  const items = pieces.map((pc, i) => { const z = zOf(i); return z ? { pc, f: fusePieceSDF(pc, z, H), top: pc.base * H + z.height + 1, bot: pc.base * H - 2, S: pSize(pc) } : null; }).filter(Boolean);
+  if (!items.length) return null;
+  const pad = k + 2; let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const q of items) { x0 = Math.min(x0, q.pc.x - q.S / 2); x1 = Math.max(x1, q.pc.x + q.S / 2); z0 = Math.min(z0, q.pc.z - q.S / 2); z1 = Math.max(z1, q.pc.z + q.S / 2); y0 = Math.min(y0, q.bot); y1 = Math.max(y1, q.top); }
+  x0 -= pad; x1 += pad; z0 -= pad; z1 += pad; y0 -= 1; y1 += pad;
+  let v = opts.voxel || 0.5; const vol = (x1 - x0) * (y1 - y0) * (z1 - z0); if (vol / v ** 3 > 14e6) v = Math.cbrt(vol / 14e6);
+  const nx = Math.ceil((x1 - x0) / v) + 1, ny = Math.ceil((y1 - y0) / v) + 1, nz = Math.ceil((z1 - z0) / v) + 1, sxy = nx * ny;
+  const D = new Float32Array(nx * ny * nz).fill(1e3);
+  const smin = (a, b) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k / 4; };
+  for (const q of items) { const S = q.S / 2 + 0.5;
+    const ix0 = Math.max(0, Math.floor((q.pc.x - S - x0) / v)), ix1 = Math.min(nx - 1, Math.ceil((q.pc.x + S - x0) / v)), iz0 = Math.max(0, Math.floor((q.pc.z - S - z0) / v)), iz1 = Math.min(nz - 1, Math.ceil((q.pc.z + S - z0) / v));
+    const iy0 = Math.max(0, Math.floor((q.bot - y0) / v)), iy1 = Math.min(ny - 1, Math.ceil((q.top - y0) / v));
+    for (let iz = iz0; iz <= iz1; iz++) for (let ix = ix0; ix <= ix1; ix++) for (let iy = iy0; iy <= iy1; iy++) {
+      const i = ix + iy * nx + iz * sxy, d = q.f(x0 + ix * v, y0 + iy * v, z0 + iz * v); D[i] = smin(D[i], d); } }
+  // openings: a box from just above the floor to door height, cut through the wall(s) to the room behind on each side
+  const cuts = []; const doorTop = Math.min(8, 0.7 * H);
+  const sdfAt = (X, Y, Z) => { let m = 1e3; for (const q of items) { const S = q.S / 2; if (Math.abs(X - q.pc.x) > S + 0.5 || Math.abs(Z - q.pc.z) > S + 0.5 || Y < q.bot || Y > q.top) continue; m = Math.min(m, q.f(X, Y, Z)); } return m; };
+  const depthTo = (X, Y, Z, dx, dz) => { let wasIn = false; for (let s = 0; s <= 10; s += 0.5) { const d = sdfAt(X + dx * s, Y, Z + dz * s); if (d < 0) wasIn = true; else if (wasIn || s >= 1) return s + 0.75; } return -1; }; // through the wall to air; -1 = solid all the way
+  const addCut = (ws, c, u, g, w) => { const along = ws === 0 || ws === 2, Y = g * H + Math.min(4, doorTop * 0.6);
+    const X = along ? c : u, Z = along ? u : c, nxv = along ? 1 : 0, nzv = along ? 0 : 1;
+    const dp = depthTo(X, Y, Z, nxv, nzv), dn = depthTo(X, Y, Z, -nxv, -nzv); if (dp < 0 || dn < 0) return false;
+    cuts.push({ along, c, u, w: Math.max(3, Math.min(10, w)), lo: -dn, hi: dp, y0: g * H + 0.05, y1: g * H + doorTop }); return true; };
+  if (open !== 'none' && ev) {
+    for (const sm of ev.seams) if (sm.kind === 'B' || sm.kind === 'P') addCut(sm.ws, sm.c, sm.u, sm.g, sm.w || 4);
+    if (open === 'touching') { // rooms that touch with no door between them get one
+      const done = new Set(ev.seams.filter((s) => s.kind === 'P').map((s) => s.ws % 2 + '|' + Math.round(s.c) + '|' + s.g));
+      for (let i = 0; i < items.length; i++) for (let j = 0; j < items.length; j++) { if (i === j) continue; const A = items[i].pc, B = items[j].pc;
+        for (const ws of [0, 1]) { const ea = edgeOf(A, ws), eb = edgeOf(B, ws + 2); if (Math.abs(ea.c - eb.c) > 0.5) continue; const o0 = Math.max(ea.a, eb.a), o1 = Math.min(ea.b, eb.b); if (o1 - o0 < 7) continue;
+          const g0 = Math.max(A.base, B.base), g1 = Math.min(Math.round((items[i].top - 1) / H), Math.round((items[j].top - 1) / H));
+          for (let g = g0; g < g1; g++) { const key = ws + '|' + Math.round(ea.c) + '|' + g; if (done.has(key)) continue; if (addCut(ws, ea.c, (o0 + o1) / 2, g, Math.min(6, o1 - o0 - 2))) done.add(key); } } }
+    }
+  }
+  for (const ct of cuts) { const r = 0.4;
+    const xa = ct.along ? ct.c + ct.lo : ct.u - ct.w / 2, xb = ct.along ? ct.c + ct.hi : ct.u + ct.w / 2, za = ct.along ? ct.u - ct.w / 2 : ct.c + ct.lo, zb = ct.along ? ct.u + ct.w / 2 : ct.c + ct.hi;
+    const ix0 = Math.max(0, Math.floor((xa - x0) / v) - 1), ix1 = Math.min(nx - 1, Math.ceil((xb - x0) / v) + 1), iz0 = Math.max(0, Math.floor((za - z0) / v) - 1), iz1 = Math.min(nz - 1, Math.ceil((zb - z0) / v) + 1), iy0 = Math.max(0, Math.floor((ct.y0 - y0) / v) - 1), iy1 = Math.min(ny - 1, Math.ceil((ct.y1 - y0) / v) + 1);
+    const cx = (xa + xb) / 2, cy = (ct.y0 + ct.y1) / 2, cz = (za + zb) / 2, hx = (xb - xa) / 2 - r, hy = (ct.y1 - ct.y0) / 2 - r, hz = (zb - za) / 2 - r;
+    for (let iz = iz0; iz <= iz1; iz++) for (let iy = iy0; iy <= iy1; iy++) for (let ix = ix0; ix <= ix1; ix++) {
+      const qx = Math.abs(x0 + ix * v - cx) - hx, qy = Math.abs(y0 + iy * v - cy) - hy, qz = Math.abs(z0 + iz * v - cz) - hz;
+      const box = Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0) - r, i = ix + iy * nx + iz * sxy; if (-box > D[i]) D[i] = -box; } }
+  const mesh = fuseNets(D, nx, ny, nz, v, x0, y0, z0);
+  return { mesh, voxel: v, cuts: cuts.length, dims: [nx, ny, nz] };
+}
+
 /* ---------------- Clusters workbench (the Tiling tab) ----------------
    Free placement: pieces sit anywhere in plan (1 ft snap), always on a floor level, so floorplates align. Each refined model is
    scored for workspace, gathering and lobby; clusters are generated per program, then branched into variations. Shared in db:
    clusters/<id>. */
 let tilingOn = false;
 const TL = { info: new Map(), pre: new Map(), feet: new Map(), prepJob: null, local: false, clusters: [], cur: store.get('clSel', null), pick: -1, level: 0,
-  color: 'clay', showSeams: true, showLevels: true, view: null, saveT: new Map(), fitsKey: '', fits: null,
+  color: 'clay', showSeams: true, showLevels: true, fuse: { on: false, blend: 4, open: 'blocked', sig: '', geom: null, busy: false, tok: 0 }, view: null, saveT: new Map(), fitsKey: '', fits: null,
   set: Object.assign({ module: 30, H: 12, detail: 64, exportDetail: 64 }, store.get('clSet', {})),
   rules: Object.assign({ layout: 'free', rows: 2, cols: 3, tiers: 1, upper: 'sparse', pieces: 0, offset: 0.7, stack: -1, scale: 'auto', mirror: 0.3, variety: 0.5, passages: 0.6, rotate: true }, store.get('clRules', {})) };
 TILE_FT = TL.set.module;
@@ -4737,6 +4838,7 @@ async function tilePrep(it) {
   let foot = 0; for (let z = 0; z < R; z++) for (let x = 0; x < R; x++) for (let y = 0; y < R; y++) if (F[x + y * R + z * R * R] < 0) { foot++; break; }
   const vo = tileVoids(F, R, 32), tallVoid = vo.voidFrac >= 0.18, openBottom = vo.openFrac >= 0.1; // solid bottom = floor under ~90%+ of its base; only those stand on the ground
   p = { sig, r, mesh: b.mesh, levels: b.levels.filter((l) => l.n >= 0.02 * R * R).map((l) => ({ h: l.h * sc, n: l.n })), lin: b.lin, og: sideOpenGrids(F, R, 0.15), k: sc, open: tileOpenness(F, R, 0.15), foot, vo, tallVoid, openBottom };
+  { const FR = Math.min(R, 64), dn = (G) => (FR === R ? Float32Array.from(G) : C.resample(G, R, FR)); p.F = dn(F); p.FR = FR; if (tallVoid) p.Fcut = dn(roofCut(F, R, vo)); } // lighter copies of the field, for Fuse
   if (tallVoid) { try { p.cutMesh = (await refPipeline(it, r, (Fs) => roofCut(Fs, R, vo))).mesh; } catch (e) { console.warn('roof cut', e); } }
   TL.pre.set(it.id, p); TL.feet.delete(it.id); return p;
 }
@@ -4751,7 +4853,7 @@ function tileFeetFor(id) {
   let cutGeom = null;
   if (p.cutMesh) { const tc = tileFeet(p.cutMesh, p.levels, H); cutGeom = new THREE.BufferGeometry(); cutGeom.setAttribute('position', new THREE.BufferAttribute(tc.positions, 3)); cutGeom.setIndex(new THREE.BufferAttribute(tc.indices, 1)); cutGeom.computeVertexNormals(); cutGeom.setAttribute('color', new THREE.BufferAttribute(solidColors(tc.positions.length / 3, p.lin), 3)); }
   if (f && f.cutGeom) f.cutGeom.dispose();
-  f = { H, M: TILE_FT, sig: p.sig, r: p.r, geom: g, cutGeom, height: tf.height, storeys: tf.storeys, faces2: readFaces2(p.og, tf, H, p.k), cover }; TL.feet.set(id, f); return f;
+  f = { H, M: TILE_FT, sig: p.sig, r: p.r, geom: g, cutGeom, map: tf.map, height: tf.height, storeys: tf.storeys, faces2: readFaces2(p.og, tf, H, p.k), cover }; TL.feet.set(id, f); return f;
 }
 function tileFull() { return REF.items.map((it) => { const p = TL.pre.get(it.id); if (!p || p.sig !== tileSig(it)) return null; const f = tileFeetFor(it.id); return { id: it.id, name: it.name, open: p.open, faces2: f.faces2, storeys: f.storeys, cover: f.cover, height: f.height, vo: p.vo, tallVoid: p.tallVoid, openBottom: p.vo ? p.vo.openFrac >= 0.1 : p.openBottom }; }).filter(Boolean); }
 function fitsNow() { const ts = tileFull(); const key = ts.map((t) => t.id).join(',') + '|' + TL.set.H + '|' + TILE_FT; if (TL.fitsKey !== key) { TL.fits = { ts, f: programFits(ts) }; TL.fitsKey = key; } return TL.fits; }
@@ -4779,6 +4881,30 @@ function tileMat(id) {
 }
 const SEAM_COL = { P: 0x2fb57f, E: 0x2fb57f, T: 0x3fb8c8, B: 0xe0303a, U: 0xe0a030 };
 const seamGeo = { x: new THREE.BoxGeometry(1.2, 7, 4), z: new THREE.BoxGeometry(4, 7, 1.2) };
+// sampling data for one placed piece: its kept field (roof cut when it carries a void stack) and its feet mapping
+function fuseDataFor(id, cut) {
+  const p = TL.pre.get(id), f = p && tileFeetFor(id); if (!p || !(p.F || p.fzKeep) || !f) return null;
+  if (!p.fzKeep) { p.fzKeep = fuseKeepField(p.F, p.FR, p.mesh, p.r / p.FR); p.F = null; } // the kept field replaces the raw one (saves memory)
+  let F = p.fzKeep; if (cut && p.cutMesh && (p.Fcut || p.fzCut)) { if (!p.fzCut) p.fzCut = p.Fcut ? fuseKeepField(p.Fcut, p.FR, p.cutMesh, p.r / p.FR) : p.fzKeep; p.Fcut = null; F = p.fzCut; }
+  return { F, R: p.FR, k: p.r / p.FR, map: f.map, height: f.height }; // mesh grid -> field grid
+}
+function fuseSig(c, voxel) { return JSON.stringify([c.id, c.pieces.map((q) => [q.t, q.x, q.z, q.rot, !!q.mir, q.sc || 1, q.base]), TL.set.H, TILE_FT, TL.fuse.blend, TL.fuse.open, voxel, REF.items.map((it) => it.id + tileSig(it)).join()]); }
+function fuseNow(c, voxel) {
+  const ev = TL.ev || evaluateCluster(c.pieces, byIdFull(), 0), zs = new Map();
+  return fuseCluster(c.pieces, (i) => { const pc = c.pieces[i]; if (!refItem(pc.t)) return null; const cut = !!(ev.roofCut && ev.roofCut.has(i)), key = pc.t + (cut ? '|c' : '');
+    if (!zs.has(key)) zs.set(key, fuseDataFor(pc.t, cut)); return zs.get(key); }, ev, { H: TL.set.H, blend: TL.fuse.blend, open: TL.fuse.open, voxel });
+}
+function fuseRequest(c) {
+  const voxel = TILE_FT / (TL.set.detail || 64), sig = fuseSig(c, voxel); if (TL.fuse.sig === sig && TL.fuse.geom) return TL.fuse.geom;
+  if (TL.fuse.busy === sig) return null; TL.fuse.busy = sig; const tok = ++TL.fuse.tok;
+  status('Fusing the cluster into one form…');
+  setTimeout(() => { if (tok !== TL.fuse.tok) return; let out = null; try { out = fuseNow(c, voxel); } catch (e) { console.warn('fuse', e); toast('Could not fuse this cluster.'); }
+    TL.fuse.busy = false; if (!out) return; if (TL.fuse.geom) TL.fuse.geom.dispose();
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(out.mesh.positions, 3)); g.setIndex(new THREE.BufferAttribute(out.mesh.indices, 1)); g.computeVertexNormals();
+    TL.fuse.geom = g; TL.fuse.sig = sig; TL.fuse.cuts = out.cuts;
+    status(`Fused · one continuous form${out.cuts ? ` · ${out.cuts} opening${out.cuts > 1 ? 's' : ''} cut through walls` : ''}.`, 1); renderTiles3D(); }, 40);
+  return null;
+}
 function renderTiles3D() {
   if (!tilingOn) return;
   while (tgroup.children.length) { const o = tgroup.children.pop(); if (o.isMesh) o.material.dispose(); }
@@ -4786,8 +4912,11 @@ function renderTiles3D() {
   const c = curCluster(), H = TL.set.H; let missing = 0, maxL = 0;
   if (!c) { $('tileStats').textContent = ''; return; }
   const tb = byIdFull(), bad = TL.ev ? TL.ev.bad : new Set();
+  const fused = TL.fuse.on && c.pieces.length ? fuseRequest(c) : null;
+  if (fused) { const m = new THREE.Mesh(fused, new THREE.MeshStandardMaterial({ color: 0xdedbd5, roughness: 0.75, metalness: 0, side: THREE.DoubleSide })); tgroup.add(m); }
   c.pieces.forEach((pc, i) => {
     const f = refItem(pc.t) ? tileFeetFor(pc.t) : null; if (!f) { missing++; return; } const sc = pc.sc || 1;
+    if (fused) { if (i === TL.pick) { const S = pSize(pc), hh = f.storeys * TL.set.H; const box = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(S, hh, S)), new THREE.LineBasicMaterial({ color: 0xe2589a })); box.position.set(pc.x, pc.base * TL.set.H + hh / 2, pc.z); tgroup.add(box); } maxL = Math.max(maxL, pc.base + f.storeys); return; }
     const m = new THREE.Mesh(TL.ev && TL.ev.roofCut.has(i) && f.cutGeom ? f.cutGeom : f.geom, tileMat(pc.t)); m.scale.set(pc.mir ? -sc : sc, 1, sc); m.rotation.y = -pc.rot * Math.PI / 2; m.position.set(pc.x, pc.base * H, pc.z); tgroup.add(m);
     if (i === TL.pick || bad.has(i)) { const S = pSize(pc), hh = f.storeys * H; const box = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(S, hh, S)), new THREE.LineBasicMaterial({ color: i === TL.pick ? 0xe2589a : 0xe0303a })); box.position.set(pc.x, pc.base * H + hh / 2, pc.z); tgroup.add(box); }
     maxL = Math.max(maxL, pc.base + f.storeys);
@@ -5022,12 +5151,24 @@ $('tH').addEventListener('change', (e) => { TL.set.H = Math.max(8, Math.min(30, 
 $('tDetail').addEventListener('change', (e) => { TL.set.detail = +e.target.value; saveSet(); prepAll(); });
 $('tExpDetail').addEventListener('change', (e) => { TL.set.exportDetail = +e.target.value; saveSet(); });
 $('tLevels').addEventListener('change', (e) => { TL.showLevels = e.target.checked; renderTiles3D(); });
+$('tFuse').addEventListener('change', (e) => { TL.fuse.on = e.target.checked; if (!TL.fuse.on) status('Pieces shown separately.', 1); renderTiles3D(); });
+$('tFuseBlend').addEventListener('input', (e) => { $('tFuseBlendOut').value = e.target.value + ' ft'; });
+$('tFuseBlend').addEventListener('change', (e) => { TL.fuse.blend = +e.target.value; renderTiles3D(); });
+$('tFuseOpen').addEventListener('change', (e) => { TL.fuse.open = e.target.value; renderTiles3D(); });
 $('tSeamsChk').addEventListener('change', (e) => { TL.showSeams = e.target.checked; renderTiles3D(); });
 $('tColor').addEventListener('change', (e) => { TL.color = e.target.value; renderTiles3D(); });
 
 /* --- export the open cluster as one STL (Z up, feet) --- */
 $('tileExport').addEventListener('click', async () => {
   const c = curCluster(); if (!c || !c.pieces.length) { toast('Nothing to export.'); return; } const btn = $('tileExport'); btn.disabled = true;
+  if (TL.fuse.on) { try { status('Exporting · fusing at export detail…'); await new Promise((r) => setTimeout(r, 30));
+      const out = fuseNow(c, TILE_FT / (TL.set.exportDetail || 64)); if (!out) throw new Error('nothing to fuse'); const P = out.mesh.positions, I = out.mesh.indices, nt = I.length / 3;
+      const buf = new ArrayBuffer(84 + nt * 50), dv = new DataView(buf); const hdr = 'SubD cluster, fused (feet, Z up)'; for (let q = 0; q < hdr.length; q++) dv.setUint8(q, hdr.charCodeAt(q)); dv.setUint32(80, nt, true);
+      let o = 84; const vt = (v) => [P[3 * v], -P[3 * v + 2], P[3 * v + 1]];
+      for (let t = 0; t < I.length; t += 3) { const a = vt(I[t]), b = vt(I[t + 1]), cc = vt(I[t + 2]); const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = cc[0] - a[0], vy = cc[1] - a[1], vz = cc[2] - a[2]; let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz) || 1;
+        dv.setFloat32(o, nx / l, true); dv.setFloat32(o + 4, ny / l, true); dv.setFloat32(o + 8, nz / l, true); o += 12; for (const q of [a, b, cc]) { dv.setFloat32(o, q[0], true); dv.setFloat32(o + 4, q[1], true); dv.setFloat32(o + 8, q[2], true); o += 12; } dv.setUint16(o, 0, true); o += 2; }
+      const nm = safe(c.name) + '-fused'; status('Packing…', 1); await save(nm + '.zip', C.zip([{ name: nm + '.stl', data: new Uint8Array(buf) }])); status(`Exported ${c.name} as one fused solid.`, 1);
+    } catch (e) { console.warn(e); toast('Could not export: ' + (e.message || e)); } btn.disabled = false; return; }
   try {
     const H = TL.set.H, r = TL.set.exportDetail || 64, geo = new Map(), ids = [...new Set(c.pieces.map((q) => q.t))].filter((id) => refItem(id));
     for (let k = 0; k < ids.length; k++) { const it = refItem(ids[k]); status(`Exporting · building ${it.name} (${k + 1}/${ids.length})…`, (k + 1) / (ids.length + 1));
