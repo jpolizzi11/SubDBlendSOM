@@ -1,0 +1,14 @@
+rules_version = '2';
+// Paste into Firebase console → Firestore Database → Rules, then Publish.
+// Anyone who opens the site can read and save the group's work (clusters, refined models, SOM runs and bank).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{coll}/{id} {
+      allow read: if coll in ['runs', 'bank', 'bankIndex', 'refine', 'clusters'];
+      allow delete: if coll in ['runs', 'bank', 'bankIndex', 'refine', 'clusters'];
+      allow create, update: if coll in ['runs', 'bank', 'bankIndex', 'refine', 'clusters']
+        && request.resource.data.keys().hasOnly(['j', 'createdAt', 'sentAt'])
+        && request.resource.data.j is string && request.resource.data.j.size() < 900000;
+    }
+  }
+}
