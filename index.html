@@ -5470,14 +5470,14 @@ function circulation(grid, pieces, ev, H) {
   return out;
 }
 // draw a route network: red tubes along the floors, dots at doorways and rooms, vertical links through void cores
-const PATH_MAT = new THREE.MeshBasicMaterial({ color: 0xe0303a }), STOP_MAT = { room: new THREE.MeshBasicMaterial({ color: 0xffffff }), door: new THREE.MeshBasicMaterial({ color: 0xe0303a }) };
+const PATH_MAT = new THREE.MeshBasicMaterial({ color: 0xe0303a, depthTest: false, transparent: true, opacity: 0.92 }), STOP_MAT = { room: new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true }), door: new THREE.MeshBasicMaterial({ color: 0xe0303a, depthTest: false, transparent: true }) }; // drawn over the massing, so routes read through walls
 function drawCirculation(group, cr) {
   const g = new THREE.Group(); g.userData.isPaths = true;
   for (const p of cr.paths) { if (p.length < 2) continue; const pts = p.map((q) => new THREE.Vector3(q[0], q[1], q[2]));
     const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal'); g.add(new THREE.Mesh(new THREE.TubeGeometry(curve, Math.max(8, pts.length * 2), 0.32, 6, false), PATH_MAT)); }
   for (const l of cr.lifts) { const a = new THREE.Vector3(...l[0]), b = new THREE.Vector3(...l[1]); const m = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, a.distanceTo(b), 8), PATH_MAT); m.position.copy(a).add(b).multiplyScalar(0.5); g.add(m); }
   const sg = new THREE.SphereGeometry(0.75, 16, 10); for (const s of cr.stops) { const m = new THREE.Mesh(sg, s.kind === 'room' ? STOP_MAT.room : STOP_MAT.door); m.position.set(s.p[0], s.p[1] + 0.2, s.p[2]); g.add(m); }
-  group.add(g); return g;
+  g.traverse((o) => { o.renderOrder = 10; }); group.add(g); return g;
 }
 const withStoreys = (pieces) => pieces.map((pc) => { const f = refItem(pc.t) ? tileFeetFor(pc.t) : null; return Object.assign({}, pc, { storeys: f ? f.storeys : 1 }); });
 
