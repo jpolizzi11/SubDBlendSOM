@@ -5025,8 +5025,9 @@ function solidBase(F, R, levels) {
   const out = new Uint8Array(R2), st = []; for (let i = 0; i < R; i++) for (const c of [i, i + (R - 1) * R, i * R, i * R + R - 1]) if (!mask[c] && !out[c]) { out[c] = 1; st.push(c); }
   while (st.length) { const c = st.pop(), x = c % R, z = (c / R) | 0; for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const a = x + dx, b = z + dz; if (a < 0 || b < 0 || a >= R || b >= R) continue; const q = a + b * R; if (!mask[q] && !out[q]) { out[q] = 1; st.push(q); } } }
   for (let c = 0; c < R2; c++) if (!out[c]) mask[c] = 1;
+  for (let c = 0; c < R2; c++) { const x = c % R, z = (c / R) | 0; if (x < mnx || x > mxx || z < mnz || z > mxz) mask[c] = 0; } // never wider than the model itself
   const sd = sd2D(mask, R, R), G = Float32Array.from(F);
-  for (let z = 0; z < R; z++) for (let x = 0; x < R; x++) { const m = sd[x + z * R]; if (m > 3) continue;
+  for (let z = mnz; z <= mxz; z++) for (let x = mnx; x <= mxx; x++) { const m = sd[x + z * R]; if (m > 0.5) continue;
     for (let y = Math.max(0, y0 - 2); y <= Math.min(R - 1, Math.ceil(top) + 2); y++) { const yc = y + 0.5, slab = Math.max(m, bot - yc, yc - top) / R, i = x + y * R + z * R2; if (slab < G[i]) G[i] = slab; } }
   return G;
 }
@@ -5035,12 +5036,13 @@ async function tilePrep(it) {
   if (p && p.sig === sig && p.r === r) return p;
   let b = await refPipeline(it, r); const R = b.fullR, sc = b.R / R;
   const vo0 = tileVoids(b.field, R, 32), base = vo0.openFrac >= 0.1 ? null : (Fs) => solidBase(Fs, R, b.levels); // ground pieces get one solid base slab
-  if (base) { const lv = b.levels; b = await refPipeline(it, r, base); b.levels = lv; b.field = base(b.field); }
-  const F = b.field;
+  const F = b.field; // doors, floors and voids are read from the model as refined; the solid base only changes the geometry
+  if (base) { const lv = b.levels; b = await refPipeline(it, r, base); b.levels = lv; }
+  const Fgeo = base ? base(F) : F;
   let foot = 0; for (let z = 0; z < R; z++) for (let x = 0; x < R; x++) for (let y = 0; y < R; y++) if (F[x + y * R + z * R * R] < 0) { foot++; break; }
   const vo = tileVoids(F, R, 32), tallVoid = vo.voidFrac >= 0.18, openBottom = vo.openFrac >= 0.1; // solid bottom = floor under ~90%+ of its base; only those stand on the ground
   p = { sig, r, mesh: b.mesh, levels: b.levels.filter((l) => l.n >= 0.02 * R * R).map((l) => ({ h: l.h * sc, n: l.n })), lin: b.lin, og: sideOpenGrids(F, R, 0.15), k: sc, open: tileOpenness(F, R, 0.15), foot, vo, tallVoid, openBottom };
-  { const FR = Math.min(R, 64), dn = (G) => (FR === R ? Float32Array.from(G) : C.resample(G, R, FR)); p.F = dn(F); p.FR = FR; if (tallVoid) p.Fcut = dn(roofCut(F, R, vo)); } // lighter copies of the field, for Fuse
+  { const FR = Math.min(R, 64), dn = (G) => (FR === R ? Float32Array.from(G) : C.resample(G, R, FR)); p.F = dn(Fgeo); p.FR = FR; if (tallVoid) p.Fcut = dn(roofCut(Fgeo, R, vo)); } // lighter copies of the field, for Fuse
   if (tallVoid) { try { p.cutMesh = (await refPipeline(it, r, (Fs) => roofCut(base ? base(Fs) : Fs, R, vo))).mesh; } catch (e) { console.warn('roof cut', e); } }
   TL.pre.set(it.id, p); TL.feet.delete(it.id); return p;
 }
