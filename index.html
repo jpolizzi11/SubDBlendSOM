@@ -4762,11 +4762,53 @@ function fuseCluster(pieces, zOf, ev, opts) {
   const nx = Math.ceil((x1 - x0) / v) + 1, ny = Math.ceil((y1 - y0) / v) + 1, nz = Math.ceil((z1 - z0) / v) + 1, sxy = nx * ny;
   const D = new Float32Array(nx * ny * nz).fill(1e3);
   const smin = (a, b) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k / 4; };
+  const near = new Uint8Array(nx * ny * nz);
   for (const q of items) { const S = q.S / 2 + 0.5;
     const ix0 = Math.max(0, Math.floor((q.pc.x - S - x0) / v)), ix1 = Math.min(nx - 1, Math.ceil((q.pc.x + S - x0) / v)), iz0 = Math.max(0, Math.floor((q.pc.z - S - z0) / v)), iz1 = Math.min(nz - 1, Math.ceil((q.pc.z + S - z0) / v));
     const iy0 = Math.max(0, Math.floor((q.bot - y0) / v)), iy1 = Math.min(ny - 1, Math.ceil((q.top - y0) / v));
     for (let iz = iz0; iz <= iz1; iz++) for (let ix = ix0; ix <= ix1; ix++) for (let iy = iy0; iy <= iy1; iy++) {
-      const i = ix + iy * nx + iz * sxy, d = q.f(x0 + ix * v, y0 + iy * v, z0 + iz * v); D[i] = smin(D[i], d); } }
+      const i = ix + iy * nx + iz * sxy, d = q.f(x0 + ix * v, y0 + iy * v, z0 + iz * v); D[i] = smin(D[i], d); if (d < k && near[i] < 255) near[i]++; } }
+  const at = (X, Y, Z, G) => { const ix = Math.round((X - x0) / v), iy = Math.round((Y - y0) / v), iz = Math.round((Z - z0) / v); return ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz ? 1e3 : (G || D)[ix + iy * nx + iz * sxy]; };
+  // 1. patch the joins: across every place two pieces meet, wherever there is solid on both sides of the join, the join is filled
+  { const D0 = Float32Array.from(D), seen = new Set();
+    for (let i = 0; i < items.length; i++) for (let j = 0; j < items.length; j++) { if (i === j) continue; const A = items[i], B = items[j];
+      for (const ws of [0, 1]) { const ea = edgeOf(A.pc, ws), eb = edgeOf(B.pc, ws + 2), gap = Math.abs(ea.c - eb.c); if (gap > 2.5) continue;
+        const o0 = Math.max(ea.a, eb.a), o1 = Math.min(ea.b, eb.b), ya = Math.max(A.bot, B.bot), yb = Math.min(A.top, B.top); if (o1 - o0 < 1 || yb - ya < 1) continue;
+        const key = [i, j, ws].join(); if (seen.has(key)) continue; seen.add(key);
+        const c = (ea.c + eb.c) / 2, t = Math.max(1.5, gap / 2 + 1.2), along = ws === 0;
+        const ca = Math.floor((c - t - (along ? x0 : z0)) / v), cb = Math.ceil((c + t - (along ? x0 : z0)) / v), ua = Math.floor((o0 - (along ? z0 : x0)) / v), ub = Math.ceil((o1 - (along ? z0 : x0)) / v), iy0 = Math.max(0, Math.floor((ya - y0) / v)), iy1 = Math.min(ny - 1, Math.ceil((yb - y0) / v));
+        for (let a = ca; a <= cb; a++) for (let u = ua; u <= ub; u++) { const ix = along ? a : u, iz = along ? u : a; if (ix < 0 || iz < 0 || ix >= nx || iz >= nz) continue;
+          const X = x0 + ix * v, Z = z0 + iz * v, w = 1 - Math.abs((along ? X : Z) - c) / (t + v);
+          for (let iy = iy0; iy <= iy1; iy++) { const Y = y0 + iy * v, n = along ? [t, 0] : [0, t];
+            const db = Math.max(at(X - n[0], Y, Z - n[1], D0), at(X + n[0], Y, Z + n[1], D0)); if (db >= 0.3) continue;
+            const ii = ix + iy * nx + iz * sxy, fill = db + (1 - w) * 0.6; if (fill < D[ii]) { const h = Math.max(1.2 - Math.abs(fill - D[ii]), 0) / 1.2; D[ii] = Math.min(fill, D[ii]) - h * h * 0.3; } near[ii] = Math.max(near[ii], 2); } } } } }
+  // 2. walkable slots: a low opening at floor level through a thin wall (lower than 7 ft, wall continuing above) is raised to 7 ft
+  const slotCuts = []; { const DOOR = 7, maxSt = Math.ceil((y1 - Math.max(0, y0)) / H);
+    for (let g = 0; g <= maxSt; g++) { const yf = g * H; if (yf < y0 + 1 || yf + DOOR > y1) continue; const cand = new Uint8Array(nx * nz), nrm = new Uint8Array(nx * nz);
+      for (let iz = 1; iz < nz - 1; iz++) for (let ix = 1; ix < nx - 1; ix++) { const X = x0 + ix * v, Z = z0 + iz * v;
+        if (at(X, yf - 0.5, Z) >= 0 || at(X, yf + 0.6, Z) < 0) continue; // floor below, open just above it
+        let ya = -1; for (let y = yf + 0.6; y < yf + DOOR - 0.4; y += v) if (at(X, y, Z) < 0) { ya = y; break; } if (ya < 0) continue; // a lintel lower than door height
+        let solidAbove = true; for (let y = ya; y <= yf + DOOR + 0.6; y += v) if (at(X, y, Z) >= 0) { solidAbove = false; break; } if (!solidAbove) continue; // wall continues up past 7 ft
+        const ym = (ya + yf + DOOR) / 2, run = (dx, dz) => { let n = 0; for (let s = v; s <= 6; s += v) { if (at(X + dx * s, ym, Z + dz * s) >= 0) break; n++; } return n * v; };
+        const tx = run(1, 0) + run(-1, 0) + v, tz = run(0, 1) + run(0, -1) + v;
+        let ax = -1; if (tx <= 3.5 && tz >= 4) ax = 0; else if (tz <= 3.5 && tx >= 4) ax = 1; if (ax < 0) continue; // a thin wall, normal along x (0) or z (1)
+        const th = ax === 0 ? tx : tz, o = th / 2 + 1, sx = ax === 0 ? o : 0, sz = ax === 1 ? o : 0;
+        if (at(X + sx, yf + 0.8, Z + sz) < 0 || at(X - sx, yf + 0.8, Z - sz) < 0) continue; // open on both sides at floor level
+        cand[ix + iz * nx] = 1; nrm[ix + iz * nx] = ax; }
+      const lab = new Int32Array(nx * nz).fill(-1);
+      for (let c0 = 0; c0 < nx * nz; c0++) { if (!cand[c0] || lab[c0] >= 0) continue; const st = [c0], cells = []; lab[c0] = c0;
+        while (st.length) { const c = st.pop(); cells.push(c); const x = c % nx, z = (c / nx) | 0; for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const xx = x + dx, zz = z + dz; if (xx < 0 || zz < 0 || xx >= nx || zz >= nz) continue; const q = xx + zz * nx; if (cand[q] && lab[q] < 0 && nrm[q] === nrm[c0]) { lab[q] = c0; st.push(q); } } }
+        let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity; for (const c of cells) { const x = x0 + (c % nx) * v, z = z0 + ((c / nx) | 0) * v; mnx = Math.min(mnx, x); mxx = Math.max(mxx, x); mnz = Math.min(mnz, z); mxz = Math.max(mxz, z); }
+        const ax = nrm[c0], len = ax === 0 ? mxz - mnz : mxx - mnx; if (len < 2.5) continue;
+        slotCuts.push(ax === 0 ? { xa: mnx - 1.6, xb: mxx + 1.6, za: mnz - 0.2, zb: mxz + 0.2, ya: yf + 0.05, yb: yf + DOOR } : { xa: mnx - 0.2, xb: mxx + 0.2, za: mnz - 1.6, zb: mxz + 1.6, ya: yf + 0.05, yb: yf + DOOR }); } } }
+  // 3. soften the joins: the surface near every seam is smoothed, so pieces flow into each other with no sharp, rough creases
+  { const mask = new Uint8Array(nx * ny * nz); for (let i = 0; i < mask.length; i++) if (near[i] >= 2) mask[i] = 1;
+    for (let p = 0; p < Math.max(2, Math.round(k / (2 * v))); p++) { const m2 = Uint8Array.from(mask); // grow the seam zone
+      for (let iz = 1; iz < nz - 1; iz++) for (let iy = 1; iy < ny - 1; iy++) for (let ix = 1; ix < nx - 1; ix++) { const i = ix + iy * nx + iz * sxy; if (mask[i]) continue; if (mask[i - 1] || mask[i + 1] || mask[i - nx] || mask[i + nx] || mask[i - sxy] || mask[i + sxy]) m2[i] = 1; } mask.set(m2); }
+    const T = new Float32Array(D.length);
+    for (let pass = 0; pass < 4; pass++) { T.set(D);
+      for (let iz = 1; iz < nz - 1; iz++) for (let iy = 1; iy < ny - 1; iy++) for (let ix = 1; ix < nx - 1; ix++) { const i = ix + iy * nx + iz * sxy; if (!mask[i]) continue;
+        D[i] = (T[i] * 2 + T[i - 1] + T[i + 1] + T[i - nx] + T[i + nx] + T[i - sxy] + T[i + sxy]) / 8; } } }
   // openings: a box from just above the floor to door height, cut through the wall(s) to the room behind on each side
   const cuts = []; const doorTop = Math.min(8, 0.7 * H);
   const sdfAt = (X, Y, Z) => { let m = 1e3; for (const q of items) { const S = q.S / 2; if (Math.abs(X - q.pc.x) > S + 0.5 || Math.abs(Z - q.pc.z) > S + 0.5 || Y < q.bot || Y > q.top) continue; m = Math.min(m, q.f(X, Y, Z)); } return m; };
@@ -4785,15 +4827,15 @@ function fuseCluster(pieces, zOf, ev, opts) {
           for (let g = g0; g < g1; g++) { const key = ws + '|' + Math.round(ea.c) + '|' + g; if (done.has(key)) continue; if (addCut(ws, ea.c, (o0 + o1) / 2, g, Math.min(6, o1 - o0 - 2))) done.add(key); } } }
     }
   }
-  for (const ct of cuts) { const r = 0.4;
-    const xa = ct.along ? ct.c + ct.lo : ct.u - ct.w / 2, xb = ct.along ? ct.c + ct.hi : ct.u + ct.w / 2, za = ct.along ? ct.u - ct.w / 2 : ct.c + ct.lo, zb = ct.along ? ct.u + ct.w / 2 : ct.c + ct.hi;
+  const boxes = cuts.map((ct) => ({ xa: ct.along ? ct.c + ct.lo : ct.u - ct.w / 2, xb: ct.along ? ct.c + ct.hi : ct.u + ct.w / 2, za: ct.along ? ct.u - ct.w / 2 : ct.c + ct.lo, zb: ct.along ? ct.u + ct.w / 2 : ct.c + ct.hi, ya: ct.y0, yb: ct.y1 })).concat(slotCuts);
+  for (const bx of boxes) { const r = 0.6, ct = { y0: bx.ya, y1: bx.yb }, xa = bx.xa, xb = bx.xb, za = bx.za, zb = bx.zb;
     const ix0 = Math.max(0, Math.floor((xa - x0) / v) - 1), ix1 = Math.min(nx - 1, Math.ceil((xb - x0) / v) + 1), iz0 = Math.max(0, Math.floor((za - z0) / v) - 1), iz1 = Math.min(nz - 1, Math.ceil((zb - z0) / v) + 1), iy0 = Math.max(0, Math.floor((ct.y0 - y0) / v) - 1), iy1 = Math.min(ny - 1, Math.ceil((ct.y1 - y0) / v) + 1);
     const cx = (xa + xb) / 2, cy = (ct.y0 + ct.y1) / 2, cz = (za + zb) / 2, hx = (xb - xa) / 2 - r, hy = (ct.y1 - ct.y0) / 2 - r, hz = (zb - za) / 2 - r;
     for (let iz = iz0; iz <= iz1; iz++) for (let iy = iy0; iy <= iy1; iy++) for (let ix = ix0; ix <= ix1; ix++) {
       const qx = Math.abs(x0 + ix * v - cx) - hx, qy = Math.abs(y0 + iy * v - cy) - hy, qz = Math.abs(z0 + iz * v - cz) - hz;
       const box = Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0) - r, i = ix + iy * nx + iz * sxy; if (-box > D[i]) D[i] = -box; } }
   const mesh = fuseNets(D, nx, ny, nz, v, x0, y0, z0);
-  return { mesh, voxel: v, cuts: cuts.length, dims: [nx, ny, nz] };
+  return { mesh, voxel: v, cuts: cuts.length, slots: slotCuts.length, dims: [nx, ny, nz] };
 }
 
 /* ---------------- Clusters workbench (the Tiling tab) ----------------
@@ -4902,7 +4944,7 @@ function fuseRequest(c) {
     TL.fuse.busy = false; if (!out) return; if (TL.fuse.geom) TL.fuse.geom.dispose();
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(out.mesh.positions, 3)); g.setIndex(new THREE.BufferAttribute(out.mesh.indices, 1)); g.computeVertexNormals();
     TL.fuse.geom = g; TL.fuse.sig = sig; TL.fuse.cuts = out.cuts;
-    status(`Fused · one continuous form${out.cuts ? ` · ${out.cuts} opening${out.cuts > 1 ? 's' : ''} cut through walls` : ''}.`, 1); renderTiles3D(); }, 40);
+    status(`Fused · one continuous form${out.cuts ? ` · ${out.cuts} door opening${out.cuts > 1 ? 's' : ''} cut through walls` : ''}${out.slots ? ` · ${out.slots} low slot${out.slots > 1 ? 's' : ''} raised to 7 ft` : ''}.`, 1); renderTiles3D(); }, 40);
   return null;
 }
 function renderTiles3D() {
