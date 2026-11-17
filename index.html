@@ -5496,10 +5496,9 @@ function circulation(grid, pieces, ev, H) {
       const qa = nearest(sa, pa), qb = nearest(sb, pb); const line = [qa, pa, mid, pb, qb].filter(Boolean);
       if (line.length >= 2) out.paths.push(line); }
   }
-  for (const lk of (ev && ev.links) || []) { const u = pieces[lk.u], l = pieces[lk.l]; if (!u || !l) continue; out.lifts.push([[u.x, l.base * H + 0.35, u.z], [u.x, u.base * H + 0.35, u.z]]); }
   return out;
 }
-// draw: walkable traversal surfaces tinted green on the floor, continuous red centrelines over the massing, vertical links at void cores
+// draw: walkable traversal surfaces tinted green on the floor, continuous red centrelines over the massing
 const PATH_MAT = new THREE.MeshBasicMaterial({ color: 0xe0303a, depthTest: false, transparent: true, opacity: 0.95 }), SURF_MAT = new THREE.MeshBasicMaterial({ color: 0x2fb57f, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide });
 function drawCirculation(group, cr) {
   const g = new THREE.Group(); g.userData.isPaths = true;
