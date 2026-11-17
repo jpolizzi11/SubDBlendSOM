@@ -5115,7 +5115,7 @@ function renderTiles3D() {
     else if (TL.paths.busy !== sig) { TL.paths.busy = sig; status('Tracing the walking routes…');
       setTimeout(() => { try { const ev = evaluateCluster(c.pieces, byIdFull(), 0), zs = new Map();
           const base = fuseCluster(c.pieces, (i) => { const pc = c.pieces[i]; if (!refItem(pc.t)) return null; const cut = !!(ev.roofCut && ev.roofCut.has(i)), key = pc.t + (cut ? '|c' : ''); if (!zs.has(key)) zs.set(key, fuseDataFor(pc.t, cut)); return zs.get(key); }, ev, { H: TL.set.H, voxel: 1, blend: 1.5, smooth: 1, open: 'none', clear: 0 });
-          if (base) { TL.paths.data = circulation(base, withStoreys(c.pieces), ev, TL.set.H); TL.paths.sig = sig; const n = TL.paths.data.paths.length; status(`Walking routes · ${n} route${n === 1 ? '' : 's'} linking ${TL.paths.data.stops.length} doorways and rooms. Floors need about 6 ft of headroom to count.`, 1); }
+          if (base) { TL.paths.data = circulation(base, withStoreys(c.pieces), ev, TL.set.H); TL.paths.sig = sig; const n = TL.paths.data.paths.length; status(`Walking routes · ${TL.paths.data.surfaces.length} walkable surface${TL.paths.data.surfaces.length === 1 ? '' : 's'} running between pieces (green), centrelines in red. Floors need about 6 ft of headroom to count.`, 1); }
         } catch (e) { console.warn('paths', e); toast('Could not trace the routes.'); } TL.paths.busy = ''; renderTiles3D(); }, 30); } }
   if (typeof tSecSt !== 'undefined') applySection(tgroup, tSecSt);
   if (!tFramed && tgroup.children.length) frameTiles();
@@ -5414,70 +5414,88 @@ function showTiling(on) {
 }
 startTiling();
 
-/* ---------------- Circulation: walking routes through a cluster ----------------
-   On every level the walkable floor is found (floor underfoot, 7 ft of headroom). Entrances, doorways between pieces and
-   each piece's main room become stops; the cheapest routes between them (kept to the middle of corridors) are joined into
-   one network per level, and void cores add vertical links between levels. */
+/* ---------------- Circulation: walkable surfaces through a cluster and their centrelines ----------------
+   On every level the walkable floor is found (floor underfoot, about 6 ft of headroom, steps up to ~1 ft). Surfaces that run
+   from one piece into another are the traversal surfaces: each is tinted, and its centreline (the middle of the walkway) is
+   traced as one continuous line with branches into side areas. Void cores add vertical links between levels. */
 function circulation(grid, pieces, ev, H) {
-  const { D, nx, ny, nz, v, x0, y0, z0 } = grid, sxy = nx * ny, out = { paths: [], stops: [], lifts: [] };
+  const { D, nx, ny, nz, v, x0, y0, z0 } = grid, sxy = nx * ny, out = { paths: [], surfaces: [], lifts: [] };
   const at = (X, Y, Z) => { const ix = Math.round((X - x0) / v), iy = Math.round((Y - y0) / v), iz = Math.round((Z - z0) / v); return ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz ? 1e3 : D[ix + iy * nx + iz * sxy]; };
-  const tb = (q) => q; let maxL = 0; for (const pc of pieces) maxL = Math.max(maxL, pc.base + (pc.storeys || 1));
-  for (let g = 0; g < maxL; g++) { const yf = g * H, N2 = nx * nz, walk = new Uint8Array(N2), hf = new Float32Array(N2); let nW = 0;
+  let maxL = 0; for (const pc of pieces) maxL = Math.max(maxL, pc.base + (pc.storeys || 1));
+  const N2 = nx * nz, N8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  for (let g = 0; g < maxL; g++) { const yf = g * H, walk = new Uint8Array(N2), hf = new Float32Array(N2);
     for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) { const X = x0 + ix * v, Z = z0 + iz * v;
-      let ys = null; for (let y = yf + 1.6; y >= yf - 1.2; y -= v * 0.5) if (at(X, y, Z) < 0) { ys = y; break; } if (ys == null) continue; // floor surface within a step of this level
-      let clear = true; for (let y = ys + 0.7; y <= ys + 6; y += 0.8) if (at(X, y, Z) < 0) { clear = false; break; } if (!clear) continue; // about 6 ft of headroom
-      walk[ix + iz * nx] = 1; hf[ix + iz * nx] = ys; nW++; }
-    if (nW < 20) continue;
-    // clearance (cells to the nearest non-walkable cell), to keep routes in the middle of corridors
-    const cl = new Float32Array(N2); for (let c = 0; c < N2; c++) cl[c] = walk[c] ? 1e6 : 0;
-    for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) { const c = ix + iz * nx; if (!cl[c]) continue; let m = cl[c]; if (ix > 0) m = Math.min(m, cl[c - 1] + 1); if (iz > 0) { m = Math.min(m, cl[c - nx] + 1); if (ix > 0) m = Math.min(m, cl[c - nx - 1] + 1.414); if (ix < nx - 1) m = Math.min(m, cl[c - nx + 1] + 1.414); } else m = Math.min(m, 1); if (ix === 0) m = Math.min(m, 1); cl[c] = m; }
-    for (let iz = nz - 1; iz >= 0; iz--) for (let ix = nx - 1; ix >= 0; ix--) { const c = ix + iz * nx; if (!cl[c]) continue; let m = cl[c]; if (ix < nx - 1) m = Math.min(m, cl[c + 1] + 1); else m = Math.min(m, 1); if (iz < nz - 1) { m = Math.min(m, cl[c + nx] + 1); if (ix < nx - 1) m = Math.min(m, cl[c + nx + 1] + 1.414); if (ix > 0) m = Math.min(m, cl[c + nx - 1] + 1.414); } else m = Math.min(m, 1); cl[c] = m; }
-    const cellOf = (X, Z) => [Math.round((X - x0) / v), Math.round((Z - z0) / v)];
-    const snap = (X, Z, rad) => { const [cx, cz] = cellOf(X, Z), r = Math.ceil(rad / v); let best = -1, bd = Infinity;
-      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) { const ix = cx + dx, iz = cz + dz; if (ix < 0 || iz < 0 || ix >= nx || iz >= nz) continue; const c = ix + iz * nx; if (!walk[c]) continue; const d = Math.hypot(dx, dz) - Math.min(cl[c], 3) * 0.3; if (d < bd) { bd = d; best = c; } } return best; };
-    // stops: doorways and entrances on this level, then each piece's roomiest spot
-    const stops = [], addStop = (c, kind) => { if (c < 0) return; const x = c % nx, z = (c / nx) | 0; if (stops.some((s) => Math.hypot(s.x - x, s.z - z) * v < 3)) return; stops.push({ c, x, z, kind }); };
-    for (const sm of (ev && ev.seams) || []) { if (sm.g !== g || !'PEBT'.includes(sm.kind)) continue; const along = sm.ws === 0 || sm.ws === 2; addStop(snap(along ? sm.c : sm.u, along ? sm.u : sm.c, 5), sm.kind); }
-    for (const pc of pieces) { if (!(pc.base <= g && g < pc.base + (pc.storeys || 1))) continue; const S = pSize(pc) / 2; let best = -1, bc = 0;
-      for (let iz = Math.max(0, Math.floor((pc.z - S - z0) / v)); iz <= Math.min(nz - 1, Math.ceil((pc.z + S - z0) / v)); iz++) for (let ix = Math.max(0, Math.floor((pc.x - S - x0) / v)); ix <= Math.min(nx - 1, Math.ceil((pc.x + S - x0) / v)); ix++) { const c = ix + iz * nx; if (walk[c] && cl[c] > bc) { bc = cl[c]; best = c; } }
-      if (bc * v >= 2) addStop(best, 'room'); }
-    if (stops.length < 2) { for (const s of stops) out.stops.push({ p: [x0 + s.x * v, yf + 0.3, z0 + s.z * v], kind: s.kind }); continue; }
-    // shortest routes from every stop (cost favours the middle of a corridor)
-    const cost = (c) => 1 + 2.5 / Math.max(0.6, cl[c]), runs = stops.map((s) => {
-      const dist = new Float32Array(N2).fill(Infinity), par = new Int32Array(N2).fill(-1), heap = [[0, s.c]]; dist[s.c] = 0;
-      const push = (it) => { heap.push(it); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
-      const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
-      while (heap.length) { const [d, c] = pop(); if (d > dist[c]) continue; const x = c % nx, z = (c / nx) | 0;
-        for (const [dx, dz, w] of [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]]) { const xx = x + dx, zz = z + dz; if (xx < 0 || zz < 0 || xx >= nx || zz >= nz) continue; const q = xx + zz * nx; if (!walk[q] || Math.abs(hf[q] - hf[c]) > 1.1) continue; // steps up to ~1 ft
-          const nd = d + w * cost(q); if (nd < dist[q]) { dist[q] = nd; par[q] = c; push([nd, q]); } } }
-      return { dist, par }; });
-    // join the stops into one network (minimum spanning tree over route costs)
-    const inT = new Uint8Array(stops.length); inT[0] = 1; let added = true;
-    const comps = []; // grow a tree from each still-unreached stop so separate parts still get their routes
-    for (let root = 0; root < stops.length; root++) { if (inT[root] && root !== 0) continue; inT[root] = 1; added = true;
-      while (added) { added = false; let bi = -1, bj = -1, bd = Infinity;
-        for (let i = 0; i < stops.length; i++) if (inT[i]) for (let j = 0; j < stops.length; j++) if (!inT[j]) { const d = runs[i].dist[stops[j].c]; if (d < bd) { bd = d; bi = i; bj = j; } }
-        if (bj < 0 || !isFinite(bd)) break; inT[bj] = 1; added = true; comps.push([bi, bj]); } }
-    for (const [i, j] of comps) { const cells = []; let c = stops[j].c; while (c >= 0 && cells.length < 100000) { cells.push(c); if (c === stops[i].c) break; c = runs[i].par[c]; }
-      let pts = cells.map((q) => [x0 + (q % nx) * v, z0 + ((q / nx) | 0) * v]); const step = Math.max(1, Math.round(1.5 / v)); pts = pts.filter((_, k) => k % step === 0 || k === pts.length - 1);
-      for (let it = 0; it < 2 && pts.length > 2; it++) { const q = [pts[0]]; for (let k = 0; k < pts.length - 1; k++) { const a = pts[k], b = pts[k + 1]; q.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25], [a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]); } q.push(pts[pts.length - 1]); pts = q; }
-      const hAt = (x, z) => { const c = Math.round((x - x0) / v) + Math.round((z - z0) / v) * nx; return walk[c] ? hf[c] : yf; };
-      out.paths.push(pts.map(([x, z]) => [x, hAt(x, z) + 0.35, z])); }
-    for (const s of stops) out.stops.push({ p: [x0 + s.x * v, hf[s.c] + 0.35, z0 + s.z * v], kind: s.kind });
+      let ys = null; for (let y = yf + 1.6; y >= yf - 1.2; y -= v * 0.5) if (at(X, y, Z) < 0) { ys = y; break; } if (ys == null) continue;
+      let clear = true; for (let y = ys + 0.7; y <= ys + 6; y += 0.8) if (at(X, y, Z) < 0) { clear = false; break; } if (!clear) continue;
+      walk[ix + iz * nx] = 1; hf[ix + iz * nx] = ys; }
+    // tidy: drop specks, close pin-holes
+    const nb = (M, c) => { const x = c % nx, z = (c / nx) | 0; let n = 0; for (const [dx, dz] of N8) { const a = x + dx, b = z + dz; if (a >= 0 && b >= 0 && a < nx && b < nz && M[a + b * nx]) n++; } return n; };
+    for (let pass = 0; pass < 2; pass++) { const W2 = Uint8Array.from(walk); for (let c = 0; c < N2; c++) { const n = nb(walk, c); if (walk[c] && n <= 2) W2[c] = 0; else if (!walk[c] && n >= 7) { W2[c] = 1; hf[c] = hf[c] || yf; } } walk.set(W2); }
+    // surfaces: connected walkable areas (a step of more than ~1 ft splits them)
+    const lab = new Int32Array(N2).fill(-1), comps = [];
+    for (let c0 = 0; c0 < N2; c0++) { if (!walk[c0] || lab[c0] >= 0) continue; const id = comps.length, cells = [c0], st = [c0]; lab[c0] = id;
+      while (st.length) { const c = st.pop(), x = c % nx, z = (c / nx) | 0; for (const [dx, dz] of N8) { const a = x + dx, b = z + dz; if (a < 0 || b < 0 || a >= nx || b >= nz) continue; const q = a + b * nx; if (!walk[q] || lab[q] >= 0 || Math.abs(hf[q] - hf[c]) > 1.1) continue; lab[q] = id; cells.push(q); st.push(q); } }
+      comps.push(cells); }
+    const here = pieces.filter((pc) => pc.base <= g && g < pc.base + (pc.storeys || 1));
+    for (const cells of comps) { if (cells.length * v * v < 40) continue;
+      const touched = new Set(); for (const c of cells) { const X = x0 + (c % nx) * v, Z = z0 + ((c / nx) | 0) * v; here.forEach((pc, k) => { const S = pSize(pc) / 2; if (Math.abs(X - pc.x) < S && Math.abs(Z - pc.z) < S) touched.add(k); }); }
+      if (touched.size < 2) continue; // only surfaces that carry you from one piece into another
+      out.surfaces.push({ cells: cells.map((c) => [x0 + (c % nx) * v, hf[c], z0 + ((c / nx) | 0) * v]), v });
+      // centreline: thin the surface to a one-cell skeleton (Zhang-Suen)
+      let minx = nx, maxx = 0, minz = nz, maxz = 0; for (const c of cells) { const x = c % nx, z = (c / nx) | 0; minx = Math.min(minx, x); maxx = Math.max(maxx, x); minz = Math.min(minz, z); maxz = Math.max(maxz, z); }
+      const w = maxx - minx + 3, h = maxz - minz + 3, M = new Uint8Array(w * h); for (const c of cells) M[(c % nx) - minx + 1 + (((c / nx) | 0) - minz + 1) * w] = 1;
+      const P = (i) => [M[i - w], M[i - w + 1], M[i + 1], M[i + w + 1], M[i + w], M[i + w - 1], M[i - 1], M[i - w - 1]];
+      for (let changed = true, it = 0; changed && it < 200; it++) { changed = false;
+        for (const step of [0, 1]) { const del = [];
+          for (let z = 1; z < h - 1; z++) for (let x = 1; x < w - 1; x++) { const i = x + z * w; if (!M[i]) continue; const p = P(i), B = p.reduce((a, b) => a + b, 0); if (B < 2 || B > 6) continue;
+            let A = 0; for (let k = 0; k < 8; k++) if (!p[k] && p[(k + 1) % 8]) A++; if (A !== 1) continue;
+            if (step === 0 ? (p[0] * p[2] * p[4] || p[2] * p[4] * p[6]) : (p[0] * p[2] * p[6] || p[0] * p[4] * p[6])) continue; del.push(i); }
+          for (const i of del) M[i] = 0; if (del.length) changed = true; } }
+      // skeleton graph; prune short spurs
+      const sk = []; for (let i = 0; i < w * h; i++) if (M[i]) sk.push(i);
+      const deg = (i) => { let n = 0; for (const d of [-w - 1, -w, -w + 1, -1, 1, w - 1, w, w + 1]) if (M[i + d]) n++; return n; };
+      const spur = Math.round(5 / v);
+      for (let pass = 0; pass < 3; pass++) for (const e of sk) { if (!M[e] || deg(e) !== 1) continue; const chain = [e]; let cur = e, prev = -1;
+        while (chain.length <= spur) { let nxt = -1, n = 0; for (const d of [-w - 1, -w, -w + 1, -1, 1, w - 1, w, w + 1]) { const q = cur + d; if (M[q] && q !== prev && !chain.includes(q)) { n++; nxt = q; } } if (n !== 1) break; if (deg(nxt) > 2) break; prev = cur; cur = nxt; chain.push(cur); }
+        if (chain.length <= spur && chain.length < sk.length / 2) for (const q of chain) M[q] = 0; }
+      // trace continuous lines: the longest line first, then branches off it
+      const live = new Set(); for (let i = 0; i < w * h; i++) if (M[i]) live.add(i);
+      const N8i = [-w - 1, -w, -w + 1, -1, 1, w - 1, w, w + 1];
+      const bfs = (starts) => { const dist = new Map(), par = new Map(), q = [...starts]; for (const s of starts) { dist.set(s, 0); par.set(s, -1); }
+        for (let k = 0; k < q.length; k++) { const c = q[k]; for (const d of N8i) { const n = c + d; if (!live.has(n) || dist.has(n)) continue; dist.set(n, dist.get(c) + 1); par.set(n, c); q.push(n); } } return { dist, par }; };
+      const far = (m) => { let b = -1, bd = -1; for (const [c, d] of m) if (d > bd) { bd = d; b = c; } return [b, bd]; };
+      const used = new Set(); let guard = 0;
+      while (live.size && guard++ < 40) {
+        let starts = [...live].filter((c) => N8i.some((d) => used.has(c + d)));
+        let a; if (!starts.length) { const s0 = live.values().next().value; [a] = far(bfs([s0]).dist); starts = [a]; }
+        const r1 = bfs(starts); const [b, len] = far(r1.dist); if (b < 0) break;
+        const line = []; for (let c = b; c >= 0; c = r1.par.get(c)) line.push(c);
+        // a branch keeps its joint with the line it grows from, so the drawing stays continuous
+        const first = line[line.length - 1], joint = N8i.map((d) => first + d).find((n) => used.has(n)); if (joint !== undefined) line.push(joint);
+        for (const c of line) { live.delete(c); used.add(c); }
+        // anything still connected to what was just traced only through this line becomes later branches; tiny leftovers go
+        if (len * v < 3 && joint !== undefined) continue;
+        let pts = line.map((i) => { const x = (i % w) - 1 + minx, z = ((i / w) | 0) - 1 + minz; return [x0 + x * v, hf[x + z * nx] + 0.35, z0 + z * v]; });
+        const step = Math.max(1, Math.round(1.5 / v)); pts = pts.filter((_, k) => k % step === 0 || k === pts.length - 1);
+        for (let it = 0; it < 3 && pts.length > 2; it++) { const q = [pts[0]]; for (let k = 0; k < pts.length - 1; k++) { const p0 = pts[k], p1 = pts[k + 1]; q.push(p0.map((u, j) => u * 0.75 + p1[j] * 0.25), p0.map((u, j) => u * 0.25 + p1[j] * 0.75)); } q.push(pts[pts.length - 1]); pts = q; }
+        if (pts.length >= 2) out.paths.push(pts);
+      }
+    }
   }
-  // vertical links through void cores (stacked over a tall void)
   for (const lk of (ev && ev.links) || []) { const u = pieces[lk.u], l = pieces[lk.l]; if (!u || !l) continue; out.lifts.push([[u.x, l.base * H + 0.35, u.z], [u.x, u.base * H + 0.35, u.z]]); }
   return out;
 }
-// draw a route network: red tubes along the floors, dots at doorways and rooms, vertical links through void cores
-const PATH_MAT = new THREE.MeshBasicMaterial({ color: 0xe0303a, depthTest: false, transparent: true, opacity: 0.92 }), STOP_MAT = { room: new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true }), door: new THREE.MeshBasicMaterial({ color: 0xe0303a, depthTest: false, transparent: true }) }; // drawn over the massing, so routes read through walls
+// draw: walkable traversal surfaces tinted green on the floor, continuous red centrelines over the massing, vertical links at void cores
+const PATH_MAT = new THREE.MeshBasicMaterial({ color: 0xe0303a, depthTest: false, transparent: true, opacity: 0.95 }), SURF_MAT = new THREE.MeshBasicMaterial({ color: 0x2fb57f, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide });
 function drawCirculation(group, cr) {
   const g = new THREE.Group(); g.userData.isPaths = true;
+  for (const sf of cr.surfaces) { const h = sf.v / 2 + 0.02, P = new Float32Array(sf.cells.length * 18); let o = 0;
+    for (const [x, y, z] of sf.cells) { const yy = y + 0.08; for (const [a, b] of [[-h, -h], [h, -h], [h, h], [-h, -h], [h, h], [-h, h]]) { P[o++] = x + a; P[o++] = yy; P[o++] = z + b; } }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.add(new THREE.Mesh(geo, SURF_MAT)); }
   for (const p of cr.paths) { if (p.length < 2) continue; const pts = p.map((q) => new THREE.Vector3(q[0], q[1], q[2]));
-    const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal'); g.add(new THREE.Mesh(new THREE.TubeGeometry(curve, Math.max(8, pts.length * 2), 0.32, 6, false), PATH_MAT)); }
-  for (const l of cr.lifts) { const a = new THREE.Vector3(...l[0]), b = new THREE.Vector3(...l[1]); const m = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, a.distanceTo(b), 8), PATH_MAT); m.position.copy(a).add(b).multiplyScalar(0.5); g.add(m); }
-  const sg = new THREE.SphereGeometry(0.75, 16, 10); for (const s of cr.stops) { const m = new THREE.Mesh(sg, s.kind === 'room' ? STOP_MAT.room : STOP_MAT.door); m.position.set(s.p[0], s.p[1] + 0.2, s.p[2]); g.add(m); }
-  g.traverse((o) => { o.renderOrder = 10; }); group.add(g); return g;
+    const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal'); const m = new THREE.Mesh(new THREE.TubeGeometry(curve, Math.max(8, pts.length * 2), 0.34, 6, false), PATH_MAT); m.renderOrder = 10; g.add(m); }
+  for (const l of cr.lifts) { const a = new THREE.Vector3(...l[0]), b = new THREE.Vector3(...l[1]); const m = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, a.distanceTo(b), 8), PATH_MAT); m.position.copy(a).add(b).multiplyScalar(0.5); m.renderOrder = 10; g.add(m); }
+  group.add(g); return g;
 }
 const withStoreys = (pieces) => pieces.map((pc) => { const f = refItem(pc.t) ? tileFeetFor(pc.t) : null; return Object.assign({}, pc, { storeys: f ? f.storeys : 1 }); });
 
