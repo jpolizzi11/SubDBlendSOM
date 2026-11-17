@@ -3941,10 +3941,12 @@ function tileFeet(mesh, levels, H) {
   const roofCut = mx[1] - 0.06 * (mx[1] - mn[1]);
   const fl = levels.filter((l) => l.h < roofCut).map((l) => ({ f: (l.h - mn[1]) * sy, n: l.n })).filter((l) => l.f > -0.5 && l.f < top + 0.5).sort((a, b) => a.f - b.f);
   // each floor goes to the nearest level; floors that land on the same level merge (the bigger floor wins), so nothing is stretched
-  const knots = [[0, 0, Infinity]];
+  // Every piece's bottom is cut flat at the same line, one slab (1 ft) below its ground floor: a thick base is sliced down, a thin one
+  // thickened, so pieces side by side line up underneath and anything stacked sits on a clean flat bottom.
+  const SLAB = 1, knots = [[0, -SLAB, Infinity]];
   for (const l of fl) {
     const L = Math.round(l.f / H) * H, prev = knots[knots.length - 1];
-    if (knots.length === 1 && L === 0 && l.f > 0.25) { knots[0] = [0, -l.f, Infinity]; knots.push([l.f, 0, l.n]); continue; } // ground floor sits on level 0, its base slab goes below grade
+    if (knots.length === 1 && L === 0) { knots.push([Math.max(l.f, 0.05), 0, l.n]); continue; } // ground floor on level 0, its slab exactly SLAB thick
     if (l.f <= prev[0] + 0.25 || L < prev[1]) continue;
     if (L === prev[1]) { if (knots.length > 1 && l.n > prev[2]) knots[knots.length - 1] = [l.f, L, l.n]; continue; }
     knots.push([l.f, L, l.n]);
@@ -4446,7 +4448,41 @@ function generateCluster(progKey, tiles, fits, ru, rand, opts) {
     if (sc > bs) { bs = sc; best = { pieces, ev }; }
   }
   if (best && best.ev.wzones > 1) best.ev = stitchFlow(best.pieces, tiles, tb, ru, rand, null); // one continuous walking system
+  if (best) { alignMirrors(best.pieces, tb); best.ev = evaluateCluster(best.pieces, tb, 0); }
   return best;
+}
+// Mirrored pairs: two neighbouring copies of the same tile, one mirrored, are always an exact reflection of each other across
+// their shared edge - flush, lined up, and turned to match - so they read as one symmetrical piece and never slide out of line.
+function mirrorPairOf(A, B) {
+  if (A.t !== B.t || !A.mir === !B.mir || (A.base || 0) !== (B.base || 0) || (A.sc || 1) !== (B.sc || 1)) return null;
+  const S = pSize(A), dx = B.x - A.x, dz = B.z - A.z;
+  if (Math.abs(dx) >= 0.5 * S && Math.abs(dx) <= 1.5 * S && Math.abs(dz) < 0.75 * S && Math.abs(dx) >= Math.abs(dz)) return 'x';
+  if (Math.abs(dz) >= 0.5 * S && Math.abs(dz) <= 1.5 * S && Math.abs(dx) < 0.75 * S) return 'z';
+  return null;
+}
+function reflectOf(A, B, ax) { // where B must sit to be A's mirror image across their shared edge
+  const S = pSize(A);
+  return ax === 'x' ? { x: A.x + Math.sign(B.x - A.x) * S, z: A.z, rot: (4 - A.rot) % 4, mir: !A.mir }
+    : { x: A.x, z: A.z + Math.sign(B.z - A.z) * S, rot: (6 - A.rot) % 4, mir: !A.mir };
+}
+function mirrorOff(pieces) { let n = 0;
+  for (let i = 0; i < pieces.length; i++) for (let j = i + 1; j < pieces.length; j++) { const ax = mirrorPairOf(pieces[i], pieces[j]); if (!ax) continue;
+    const r = reflectOf(pieces[i], pieces[j], ax), B = pieces[j]; if (Math.abs(B.x - r.x) > 0.01 || Math.abs(B.z - r.z) > 0.01 || B.rot !== r.rot) n++; }
+  return n; }
+function alignMirrors(pieces, tb) {
+  for (let pass = 0; pass < 3; pass++) { let changed = false;
+    for (let i = 0; i < pieces.length; i++) for (let j = i + 1; j < pieces.length; j++) {
+      const ax = mirrorPairOf(pieces[i], pieces[j]); if (!ax) continue;
+      const r = reflectOf(pieces[i], pieces[j], ax), B = pieces[j]; if (Math.abs(B.x - r.x) < 0.01 && Math.abs(B.z - r.z) < 0.01 && B.rot === r.rot) continue;
+      const e0 = evaluateCluster(pieces, tb, 0), ok = (e) => !(e.overlaps > e0.overlaps || e.blocked > e0.blocked || e.floating > e0.floating || e.unreasoned > e0.unreasoned || e.inaccessible > e0.inaccessible || e.groundOpen > e0.groundOpen || e.wzones > e0.wzones);
+      const oi = pieces[i], oj = pieces[j]; let done = false;
+      pieces[j] = Object.assign({}, oj, r); if (ok(evaluateCluster(pieces, tb, 0))) done = true; else pieces[j] = oj; // move the second onto the reflection
+      if (!done) { const ri = reflectOf(oj, oi, ax); pieces[i] = Object.assign({}, oi, ri); if (ok(evaluateCluster(pieces, tb, 0))) done = true; else pieces[i] = oi; } // or the first onto the second's
+      if (!done) { pieces[j] = Object.assign({}, oj, { mir: oi.mir }); if (ok(evaluateCluster(pieces, tb, 0))) done = true; else pieces[j] = oj; } // can't reflect here: make it a plain copy instead of a crooked mirror
+      if (done) changed = true;
+    }
+    if (!changed) break; }
+  return pieces;
 }
 // A branch: small changes to an existing cluster (swap a tile, turn or flip a piece, slide it, add or drop one), keeping the best.
 function branchCluster(progKey, pieces0, tiles, fits, ru, rand) {
@@ -4470,6 +4506,7 @@ function branchCluster(progKey, pieces0, tiles, fits, ru, rand) {
       else { const pc = proposePiece(ps, tiles, fits, prog, ru, rand); ps.push(pc); ops.push('add'); }
     }
     if (!ops.length) continue;
+    alignMirrors(ps, tb); if (mirrorOff(ps)) continue;
     const ev = evaluateCluster(ps, tb, 0); if (ev.overlaps || ev.floating || ev.groundOpen || ev.unreasoned || ev.inaccessible || ev.blocked || ev.wzones > wz0) continue;
     const fit = ps.reduce((a, q) => a + (fitOf.get(q.t) || 0), 0) / ps.length;
     const sc = clusterScore(ev, prog, ru) + 6 * fit + rand() * 2;
@@ -4495,6 +4532,7 @@ const FORM_SNAKE = (rows, cols) => { const o = []; for (let r = 0; r < rows; r++
 function loosenFormation(pieces, tb, prog, ru, fitOf, rand, iters, onlyTier) {
   const S = TILE_FT, free = ru.offset ?? 0.7, reach = free * 0.6 * S, rots = ru.rotate === false ? [0] : [0, 1, 2, 3];
   let ev = evaluateCluster(pieces, tb, 0), cur = formationScore(pieces, ev, prog, ru, fitOf);
+  alignMirrors(pieces, tb); const off0 = mirrorOff(pieces); ev = evaluateCluster(pieces, tb, 0); cur = formationScore(pieces, ev, prog, ru, fitOf);
   const pool = () => { const ids = []; pieces.forEach((q, i) => { if (onlyTier == null || (q.tier || 0) === onlyTier) ids.push(i); }); return ids; };
   for (let it = 0; it < iters; it++) {
     const ids = pool(); if (!ids.length) break; const i = ids[Math.floor(rand() * ids.length)], old = Object.assign({}, pieces[i]), m = rand();
@@ -4502,6 +4540,7 @@ function loosenFormation(pieces, tb, prog, ru, fitOf, rand, iters, onlyTier) {
     else if (m < 0.75) { const dx = Math.sign(old.sx || rand() - 0.5), dz = Math.sign(old.sz || rand() - 0.5), g = Math.round(rand() * reach * 0.5); pieces[i].x = Math.round(old.x + dx * g); pieces[i].z = Math.round(old.z + dz * g); } // split apart
     else if (m < 0.92) pieces[i].rot = rots[Math.floor(rand() * rots.length)];
     else pieces[i].mir = !old.mir && ru.mirror > 0;
+    if (mirrorOff(pieces) > off0) { pieces[i] = old; continue; } // a mirrored pair stays an exact reflection
     const e2 = evaluateCluster(pieces, tb, 0);
     if (e2.overlaps > ev.overlaps || e2.blocked > ev.blocked || e2.floating > ev.floating || e2.unreasoned > ev.unreasoned || e2.inaccessible > ev.inaccessible || e2.groundOpen > ev.groundOpen || e2.wzones > ev.wzones || e2.voidStacks < ev.voidStacks) { pieces[i] = old; continue; }
     const s2 = formationScore(pieces, e2, prog, ru, fitOf);
@@ -4648,7 +4687,7 @@ function generateFormation(progKey, tiles, fits, ru, rand, rows, cols, opts) {
       if (e2.overlaps || e2.floating || e2.groundOpen || e2.unreasonedIdx.has(ui) || !e2.reach[ui] || e2.blocked > ev.blocked) continue;
       if (rand() < sr) { pieces.push(pc); ev = e2; made++; }
     }
-    ev = evaluateCluster(pieces, tb, 0);
+    alignMirrors(pieces, tb); ev = evaluateCluster(pieces, tb, 0);
     const upper = pieces.filter((q) => q.base > 0).length;
     const sc = formationScore(pieces, ev, prog, ru, fitOf) + (ev.voidStacks ? 40 * Math.max(0.3, sr) : 0) + (tiers > 1 ? Math.min(upper, 3) * 6 : 0) - 4 * (ev.zones - 1) - 30 * (ev.wzones - 1) + rand() * 0.5;
     if (sc > bs) { bs = sc; best = { pieces, ev }; }
@@ -4880,7 +4919,10 @@ function renderPieceBar() {
 }
 function editPiece(fn) { const c = curCluster(); if (!c || !c.pieces[TL.pick]) return; fn(c.pieces[TL.pick], c); saveCluster(c); renderAll(); }
 $('tpRot').addEventListener('click', () => editPiece((p) => { p.rot = (p.rot + 1) % 4; }));
-$('tpMir').addEventListener('click', () => editPiece((p) => { p.mir = !p.mir; }));
+$('tpMir').addEventListener('click', () => editPiece((p, c) => { p.mir = !p.mir;
+  // next to a copy of the same tile, the mirrored one snaps to be its exact reflection
+  let best = null, bd = Infinity; for (const q of c.pieces) { if (q === p) continue; const ax = mirrorPairOf(q, p); if (!ax) continue; const d = Math.hypot(q.x - p.x, q.z - p.z); if (d < bd) { bd = d; best = [q, ax]; } }
+  if (best) Object.assign(p, reflectOf(best[0], p, best[1])); }));
 $('tpSmaller').addEventListener('click', () => editPiece((p) => { p.sc = Math.max(0.5, Math.round(((p.sc || 1) - 0.05) * 20) / 20); }));
 $('tpBigger').addEventListener('click', () => editPiece((p) => { p.sc = Math.min(2, Math.round(((p.sc || 1) + 0.05) * 20) / 20); }));
 $('tpUp').addEventListener('click', () => editPiece((p) => { p.base = Math.min(8, p.base + 1); }));
