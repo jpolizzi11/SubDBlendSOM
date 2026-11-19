@@ -164,6 +164,9 @@ select, input[type=number] { border: 1px solid var(--line); background: var(--pa
 @media (max-width:700px){.hyblist{grid-template-columns:repeat(3,minmax(0,1fr))}}
 body.refine-mode main.app:not(#refineApp),body.refine-mode #layoutSw,body.refine-mode #placeSw,body.refine-mode #runBtn,body.refine-mode #bankBtn{display:none!important}
 body.tiling-mode main.app:not(#tileApp),body.tiling-mode #layoutSw,body.tiling-mode #placeSw,body.tiling-mode #runBtn,body.tiling-mode #bankBtn{display:none!important}
+body.asm-mode main.app:not(#asmApp),body.asm-mode #runBtn,body.asm-mode #bankBtn,body.asm-mode #typoTabs,body.asm-mode #mapMenu{display:none!important}
+#asmPlan{width:100%;display:block;border-radius:6px;background:var(--sunk);touch-action:none;cursor:pointer}#asmViewer{width:100%;display:block;background:var(--viewer);touch-action:none;cursor:grab}
+.asmrow{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)}.asmrow .dot{width:10px;height:10px;border-radius:50%;flex:none}.asmrow .nm{flex:1;min-width:0;font-weight:600}.asmrow small{display:block;color:var(--muted);font-weight:500}
 body.fuse-mode main.app:not(#fuseApp),body.fuse-mode #runBtn,body.fuse-mode #bankBtn,body.fuse-mode #typoTabs,body.fuse-mode #mapMenu{display:none!important}
 #fzViewer{width:100%;display:block;background:var(--viewer);touch-action:none;cursor:grab}#fzViewer.brush{cursor:crosshair}
 .clprog{margin-top:12px}.clhead{display:flex;align-items:center;gap:8px;margin-bottom:6px}.clhead .btn{margin-left:auto}.clhead .dot{width:10px;height:10px;border-radius:50%}
@@ -592,6 +595,64 @@ details.sub > .settings { padding-bottom: 6px; }
       <div class="secbar" id="fzSec"></div>
       <div class="vhint" style="padding:6px 14px 0">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. With a brush tool on, click the surface to edit it.</div>
       <p class="note pad" id="fzStats" style="margin:0"></p>
+    </section>
+  </div>
+</main>
+<main class="app" id="asmApp" hidden>
+  <div class="col">
+    <section class="panel">
+      <h2>Assemblies <button class="btn small" id="asmNew">New assembly</button></h2>
+      <div class="pad"><p class="note" style="margin:0">Combine clusters into one building: fit them into your plan outline, edit, then fuse.</p><div id="asmList" style="margin-top:8px"></div></div>
+    </section>
+    <section class="panel">
+      <h2>Plan outline</h2>
+      <div class="pad settings">
+        <label>Draw<small>Click the corners on the plan; click the first corner again to close it.</small></label><button class="btn small" id="asmDraw">Draw outline</button>
+        <label>Rectangle (ft)<small>Width × depth, centred.</small></label><span class="layoutctl"><input type="number" id="asmW" value="120" min="20" max="1000" style="width:70px" aria-label="Width"> × <input type="number" id="asmD" value="80" min="20" max="1000" style="width:70px" aria-label="Depth"><button class="btn small" id="asmRectSet">Set</button></span>
+        <label for="asmH">Height limit (ft)<small>Pieces above this are flagged. Empty = none.</small></label><input type="number" id="asmH" min="0" max="400" step="1">
+        <span></span><button class="btn small" id="asmClearOutline">Clear outline</button>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Clusters</h2>
+      <div class="pad"><p class="note" style="margin:0 0 6px">Add a cluster as a block. It stays linked: edit it in step 3 and the assembly follows.</p><div id="asmClusters"></div></div>
+    </section>
+    <details class="fold" open>
+      <summary>Connector pieces</summary>
+      <div class="pad"><p class="note" style="margin:0 0 8px">Click a tile to add it as a connector next to the selected piece. Connectors show in grey.</p><div id="asmLib"></div></div>
+    </details>
+  </div>
+  <div class="col">
+    <section class="panel">
+      <div class="maptools">
+        <input type="text" id="asmName" class="clname" maxlength="60" aria-label="Assembly name" placeholder="No assembly open">
+        <span class="actions" style="margin:0">
+          <button class="btn small primary" id="asmFit" title="Place the clusters inside the outline, touching each other">Fit to outline</button>
+          <button class="btn small" id="asmConnect" title="Add connector pieces where clusters can't be walked between">Auto-connect</button>
+          <details class="menu"><summary class="btn small">More</summary><div class="menu-list">
+            <button class="btn small" id="asmTrim">Remove pieces outside the outline / over the height</button>
+            <button class="btn small" id="asmRestore">Restore removed pieces</button>
+            <button class="btn small" id="asmDelete">Delete assembly</button>
+          </div></details>
+        </span>
+      </div>
+      <div class="mapwrap"><canvas id="asmPlan" aria-label="Assembly plan"></canvas></div>
+      <div class="pad" style="padding-top:0">
+        <div class="actions" style="margin-top:0">
+          <button class="btn small" id="asmRotPart">Rotate cluster 90°</button><button class="btn small" id="asmRemovePart">Take cluster out</button><button class="btn small" id="asmRemovePiece">Remove piece</button>
+          <button class="btn small" id="asmRotPiece">Rotate connector</button><button class="btn small" id="asmMirPiece">Mirror connector</button><button class="btn small" id="asmUp">Up a level</button><button class="btn small" id="asmDown">Down a level</button>
+        </div>
+        <p class="note" id="asmSelInfo"></p>
+        <p class="note" id="asmStats" style="margin:4px 0 0"></p>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>3D <span class="actions" style="margin:0"><select id="asmColor" aria-label="Colour by"><option value="cluster">Colour by cluster</option><option value="program">Colour by program</option><option value="model">Colour by original model</option></select>
+        <label class="note" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="asmFuse"> Fuse</label><label class="note" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="asmPathsChk"> Paths</label>
+        <button class="btn small primary" id="asmExport">Fused STL .zip</button></span></h2>
+      <canvas id="asmViewer"></canvas>
+      <div class="secbar" id="asmSec"></div>
+      <div class="vhint" style="padding:6px 14px 10px">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. Pink is your outline (dashed: the height limit).</div>
     </section>
   </div>
 </main>
@@ -2061,9 +2122,9 @@ async function preloadAll() { for (const t of TYPOLOGIES) { try { await presetMo
 function updateSlidesBtn() { const b = $('dlSlides'); if (!b) return; const t = typoOf(curTypo); b.hidden = !t; b.disabled = !(state.res && t); }
 function renderTypoTabs() {
   const nav = $('stepNav'); nav.innerHTML = '';
-  const steps = [['SOM map', '', !refineOn && !tilingOn && !(fuseOn), () => { if (fuseOn) showFuse(false); if (refineOn) showRefine(false); if (tilingOn) showTiling(false); }],
-    ['Refine', `${REF.items.length}`, refineOn, () => { if (fuseOn) showFuse(false); if (tilingOn) showTiling(false); showRefine(true); }], ['Clusters', '', tilingOn, () => { if (fuseOn) showFuse(false); showTiling(true); }],
-    ['Fuse', FZ ? `${fuseSent().length || ''}` : '', fuseOn, () => showFuse(true)]];
+  const steps = [['SOM map', '', !refineOn && !tilingOn && !fuseOn && !asmOn, () => { if (asmOn) showAsm(false); if (fuseOn) showFuse(false); if (refineOn) showRefine(false); if (tilingOn) showTiling(false); }],
+    ['Refine', `${REF.items.length}`, refineOn, () => { if (asmOn) showAsm(false); if (fuseOn) showFuse(false); if (tilingOn) showTiling(false); showRefine(true); }], ['Clusters', '', tilingOn, () => { if (asmOn) showAsm(false); if (fuseOn) showFuse(false); showTiling(true); }],
+    ['Fuse', FZ ? `${fuseSent().length || ''}` : '', fuseOn, () => { if (asmOn) showAsm(false); showFuse(true); }], ['Assemble', AS ? `${AS.list.length || ''}` : '', asmOn, () => showAsm(true)]];
   steps.forEach(([lab, sm, on, fn], i) => { const b = document.createElement('button'); b.setAttribute('aria-pressed', String(on)); b.innerHTML = `<b>${i + 1}</b>${lab}${sm ? `<small>${sm}</small>` : ''}`; b.addEventListener('click', fn); nav.appendChild(b); });
   const box = $('typoTabs'); box.innerHTML = '';
   TABS.forEach((t, i) => {
@@ -4852,7 +4913,7 @@ function fuseNets(D, nx, ny, nz, v, ox, oy, oz) {
 // pieces: cluster pieces; zOf(i) -> sampling data for piece i (or null); ev: evaluateCluster result; opts: { blend, open: 'none'|'blocked'|'touching', H, voxel }
 function fuseCluster(pieces, zOf, ev, opts) {
   const H = opts.H, k = Math.max(0.5, opts.blend || 4), open = opts.open || 'blocked', clear = opts.clear ?? 2, holesMax = opts.holes ?? 80, smoothN = opts.smooth ?? 4;
-  const items = pieces.map((pc, i) => { const z = zOf(i); return z ? { pc, f: fusePieceSDF(pc, z, H), top: pc.base * H + z.height + 1, bot: pc.base * H - 2, S: pSize(pc), openBottom: !!z.openBottom } : null; }).filter(Boolean);
+  const items = pieces.map((pc, i) => { const z = zOf(i); return z ? { pc, i, f: fusePieceSDF(pc, z, H), top: pc.base * H + z.height + 1, bot: pc.base * H - 2, S: pSize(pc), openBottom: !!z.openBottom } : null; }).filter(Boolean);
   if (!items.length) return null;
   const pad = k + 2; let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const q of items) { x0 = Math.min(x0, q.pc.x - q.S / 2); x1 = Math.max(x1, q.pc.x + q.S / 2); z0 = Math.min(z0, q.pc.z - q.S / 2); z1 = Math.max(z1, q.pc.z + q.S / 2); y0 = Math.min(y0, q.bot); y1 = Math.max(y1, q.top); }
@@ -4954,7 +5015,7 @@ function fuseCluster(pieces, zOf, ev, opts) {
     for (let iz = iz0; iz <= iz1; iz++) for (let iy = iy0; iy <= iy1; iy++) for (let ix = ix0; ix <= ix1; ix++) {
       const qx = Math.abs(x0 + ix * v - cx) - hx, qy = Math.abs(y0 + iy * v - cy) - hy, qz = Math.abs(z0 + iz * v - cz) - hz;
       const box = Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0) - r, i = ix + iy * nx + iz * sxy; if (-box > D[i]) D[i] = -box; } }
-  return { D, nx, ny, nz, v, x0, y0, z0, voxel: v, cuts: cuts.length, slots: slotCuts.length, holes, dims: [nx, ny, nz], mesh: null };
+  return { D, nx, ny, nz, v, x0, y0, z0, voxel: v, cuts: cuts.length, slots: slotCuts.length, holes, dims: [nx, ny, nz], mesh: null, items };
 }
 // brush edits on top of a fused form: smooth (soften lumps), cut (remove), fill (add); each a sphere of radius r ft at p
 function fuseApplyOps(base, ops) {
@@ -5421,12 +5482,15 @@ async function dropCluster(id) {
 }
 async function startTiling() {
   await dbReady;
-  if (!DB) { TL.local = true; TL.clusters = store.get('clusters', []); return; }
+  if (!DB) { TL.local = true; TL.clusters = store.get('clusters', []); AS.list = store.get('asm', []); return; }
   DB.collection('clusters').orderBy('createdAt', 'asc').limit(400).onSnapshot((snap) => {
     const mine = new Map(TL.clusters.map((c) => [c.id, c]));
-    TL.clusters = snap.docs.map((d) => { const x = Object.assign({ id: d.id }, d.data()); if (x.pieces) x.pieces.forEach((q) => { if ((q.sc || 1) >= 2) q.sc = 1.25; }); const m = mine.get(d.id); return m && (TL.saveT.has(d.id) || (drag && TL.cur === d.id)) ? m : x; });
+    const docs = snap.docs.filter((d) => d.data().kind !== 'assembly'), adocs = snap.docs.filter((d) => d.data().kind === 'assembly');
+    { const mineA = new Map(AS.list.map((a) => [a.id, a])); AS.list = adocs.map((d) => { const m = mineA.get(d.id); return m && AS.saveT.has(d.id) ? m : Object.assign({ id: d.id }, d.data()); }); for (const [id, a] of mineA) if (!AS.list.some((x) => x.id === id) && Date.now() - (a.createdAt || 0) < 4000) AS.list.push(a); }
+    TL.clusters = docs.map((d) => { const x = Object.assign({ id: d.id }, d.data()); if (x.pieces) x.pieces.forEach((q) => { if ((q.sc || 1) >= 2) q.sc = 1.25; }); const m = mine.get(d.id); return m && (TL.saveT.has(d.id) || (drag && TL.cur === d.id)) ? m : x; });
     for (const [id, c] of mine) if (!TL.clusters.some((x) => x.id === id) && Date.now() - (c.createdAt || 0) < 4000) TL.clusters.push(c); // just made, not echoed yet
     if (tilingOn) { if (drag) renderClusterList(); else renderAll(); }
+    if (asmOn && !AS.draw) asmRenderAll();
     if (fuseOn) { fzRenderList(); const fc = fzCluster(), key = fc ? JSON.stringify([fc.fz, fc.pieces]) : ''; if (key !== FZ.applied && !TL.saveT.has(FZ.cur)) fzRefresh(); }
   }, () => { TL.local = true; TL.clusters = store.get('clusters', []); });
 }
@@ -5662,6 +5726,266 @@ function showFuse(on) {
   if (on) { if (refineOn) showRefine(false); if (tilingOn) showTiling(false); }
   fuseOn = on; document.body.classList.toggle('fuse-mode', on); $('fuseApp').hidden = !on; renderTypoTabs();
   if (on) { if (!fzCluster() && fuseSent().length) FZ.cur = fuseSent()[fuseSent().length - 1].id; requestAnimationFrame(() => { sizeFz(); fzRefresh(); }); prepAll(); }
+}
+
+/* ---------------- Assemble step: clusters combined, fitted into the plan outline, edited into one building, fused ----------------
+   An assembly keeps links to its clusters (edit a cluster in step 3 and the assembly follows). Each placed cluster is a "part"
+   (moved and turned as one); single pieces can be removed, and connector pieces added. Every piece keeps its origin
+   (cluster, program, original model), which colours the plan and the 3D, fused or not. Stored with the clusters (kind: 'assembly'). */
+var asmOn = false;
+var AS = { list: [], cur: store.get('asmSel', null), saveT: new Map(), sel: null, draw: null, view: null, color: 'cluster', fuse: false, paths: false, base: null, baseSig: '', pathData: null, tok: 0, framed: false };
+const AS_PAL = ['#4a8fe0', '#e0a030', '#2fb57f', '#c2306c', '#8a63d2', '#3fb8c8', '#d4683a', '#7aa83a', '#e2589a', '#5d6fd6'], AS_ADDED = '#9aa0a8';
+const asmCur = () => AS.list.find((a) => a.id === AS.cur) || null;
+const asmCluster = (id) => TL.clusters.find((c) => c.id === id) || null;
+function saveAsm(a) {
+  if (!a) return; clearTimeout(AS.saveT.get(a.id));
+  AS.saveT.set(a.id, setTimeout(async () => { AS.saveT.delete(a.id); const doc = Object.assign({}, a, { updatedAt: Date.now(), by: myClient });
+    if (!TL.local && DB && canSave) { try { await DB.doc('clusters/' + a.id).set(doc); return; } catch (e) { console.warn('save assembly', e); } }
+    store.set('asm', AS.list); }, 500));
+}
+// all pieces of an assembly, in site coordinates, each tagged with where it came from
+function asmPieces(a) {
+  const out = []; if (!a) return out; const removed = new Set(a.removed || []);
+  (a.parts || []).forEach((part, pi) => { const c = asmCluster(part.cl); if (!c) return; const th = -(part.rot || 0) * Math.PI / 2, co = Math.round(Math.cos(th)), si = Math.round(Math.sin(th));
+    c.pieces.forEach((pc, k) => { const key = part.pid + ':' + k; if (removed.has(key)) return;
+      out.push(Object.assign({}, pc, { x: pc.x * co + pc.z * si + part.x, z: -pc.x * si + pc.z * co + part.z, rot: ((pc.rot || 0) + (part.rot || 0)) % 4,
+        sx: undefined, sz: undefined, slot: undefined, o: { kind: 'cluster', part: pi, pid: part.pid, k, key, cl: c.id, name: c.name, program: c.program, t: pc.t } })); }); });
+  (a.extra || []).forEach((pc, k) => out.push(Object.assign({}, pc, { o: { kind: 'added', k, key: 'x:' + pc.id, t: pc.t, name: 'Connector' } })));
+  return out;
+}
+function asmRemovedPieces(a) { const out = []; const rem = new Set(a.removed || []);
+  (a.parts || []).forEach((part) => { const c = asmCluster(part.cl); if (!c) return; const th = -(part.rot || 0) * Math.PI / 2, co = Math.round(Math.cos(th)), si = Math.round(Math.sin(th));
+    c.pieces.forEach((pc, k) => { if (rem.has(part.pid + ':' + k)) out.push({ x: pc.x * co + pc.z * si + part.x, z: -pc.x * si + pc.z * co + part.z, sc: pc.sc, base: pc.base, key: part.pid + ':' + k }); }); });
+  return out; }
+function asmColor(o) {
+  if (o.kind === 'added') return AS_ADDED;
+  if (AS.color === 'program') return (PROGRAMS[o.program] || {}).color || AS_ADDED;
+  if (AS.color === 'model') { const i = REF.items.findIndex((it) => it.id === o.t); return AS_PAL[(i < 0 ? 0 : i) % AS_PAL.length]; }
+  return AS_PAL[o.part % AS_PAL.length];
+}
+function inPoly(x, z, P) { let ins = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, zi] = P[i], [xj, zj] = P[j]; if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) ins = !ins; } return ins; }
+function pieceInside(pc, P) { if (!P || P.length < 3) return 1; const S = pSize(pc) / 2 - 0.5; let n = 0; for (const [dx, dz] of [[0, 0], [-S, -S], [S, -S], [S, S], [-S, S]]) if (inPoly(pc.x + dx, pc.z + dz, P)) n++; return n / 5; }
+function pieceTop(pc) { const f = refItem(pc.t) ? tileFeetFor(pc.t) : null; return (pc.base + (f ? f.storeys : 1)) * TL.set.H; }
+function asmFlags(a, ps) { const out = new Set(), high = new Set(); for (const pc of ps) { if (a.outline && a.outline.length >= 3 && pieceInside(pc, a.outline) < 0.6) out.add(pc.o.key); if (a.height > 0 && pieceTop(pc) > a.height + 0.5) high.add(pc.o.key); } return { out, high }; }
+
+/* --- plan --- */
+const aplan = $('asmPlan'), actx = aplan.getContext('2d');
+function sizeAsmPlan() { const w = aplan.clientWidth; if (!w) return; const dpr = Math.min(2, window.devicePixelRatio || 1); aplan.width = Math.round(w * dpr); aplan.height = Math.round(w * 0.62 * dpr); aplan.style.height = Math.round(w * 0.62) + 'px'; renderAsmPlan(); }
+new ResizeObserver(sizeAsmPlan).observe(aplan);
+function asmFitView(a, ps) { const pts = ps.map((q) => [[q.x - pSize(q) / 2, q.z - pSize(q) / 2], [q.x + pSize(q) / 2, q.z + pSize(q) / 2]]).flat().concat(a && a.outline ? a.outline : []);
+  if (!pts.length) { AS.view = { cx: 0, cz: 0, s: 3 }; return; } let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const [x, z] of pts) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+  const W = aplan.width, Hh = aplan.height, s = Math.min(W / (x1 - x0 + 40), Hh / (z1 - z0 + 40)); AS.view = { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, s }; }
+const a2s = (x, z) => [aplan.width / 2 + (x - AS.view.cx) * AS.view.s, aplan.height / 2 + (z - AS.view.cz) * AS.view.s];
+const s2a = (px, pz) => [(px - aplan.width / 2) / AS.view.s + AS.view.cx, (pz - aplan.height / 2) / AS.view.s + AS.view.cz];
+function renderAsmPlan() {
+  const a = asmCur(), W = aplan.width, Hh = aplan.height; actx.setTransform(1, 0, 0, 1, 0, 0); actx.fillStyle = css('--sunk'); actx.fillRect(0, 0, W, Hh);
+  if (!a) { actx.fillStyle = css('--muted'); actx.font = `${14 * (W / aplan.clientWidth)}px ${css('--f-ui')}`; actx.fillText('Make an assembly on the left, then draw your plan outline and add clusters.', 20, 30); return; }
+  const ps = asmPieces(a); if (!AS.view) asmFitView(a, ps); const dpr = W / aplan.clientWidth, fl = asmFlags(a, ps);
+  // grid
+  actx.strokeStyle = css('--line'); actx.lineWidth = 1; const step = 10 * AS.view.s; if (step > 6) { const [gx, gz] = s2a(0, 0); for (let x = Math.floor(gx / 10) * 10; x < gx + W / AS.view.s; x += 10) { const [px] = a2s(x, 0); actx.beginPath(); actx.moveTo(px, 0); actx.lineTo(px, Hh); actx.stroke(); } for (let z = Math.floor(gz / 10) * 10; z < gz + Hh / AS.view.s; z += 10) { const [, pz] = a2s(0, z); actx.beginPath(); actx.moveTo(0, pz); actx.lineTo(W, pz); actx.stroke(); } }
+  // outline
+  const P = AS.draw ? AS.draw : a.outline; if (P && P.length) { actx.beginPath(); P.forEach(([x, z], i) => { const [px, pz] = a2s(x, z); if (i) actx.lineTo(px, pz); else actx.moveTo(px, pz); }); if (!AS.draw && P.length >= 3) actx.closePath();
+    actx.fillStyle = 'rgba(226,88,154,0.06)'; if (!AS.draw) actx.fill(); actx.setLineDash(AS.draw ? [6 * dpr, 4 * dpr] : []); actx.strokeStyle = '#e2589a'; actx.lineWidth = 2.5 * dpr; actx.stroke(); actx.setLineDash([]);
+    if (AS.draw) for (const [x, z] of P) { const [px, pz] = a2s(x, z); actx.fillStyle = '#e2589a'; actx.beginPath(); actx.arc(px, pz, 4 * dpr, 0, 7); actx.fill(); } }
+  // removed pieces (ghosts)
+  for (const r of asmRemovedPieces(a)) { const S = pSize(r) * AS.view.s, [px, pz] = a2s(r.x, r.z); actx.setLineDash([4 * dpr, 4 * dpr]); actx.strokeStyle = css('--muted'); actx.lineWidth = 1 * dpr; actx.strokeRect(px - S / 2, pz - S / 2, S, S); actx.setLineDash([]); }
+  // pieces, lower levels first
+  const order = ps.map((q, i) => i).sort((i, j) => ps[i].base - ps[j].base);
+  for (const i of order) { const q = ps[i], S = pSize(q) * AS.view.s, [px, pz] = a2s(q.x, q.z), col = asmColor(q.o), sel = AS.sel && AS.sel.key === q.o.key, part = AS.sel && AS.sel.pid && q.o.pid === AS.sel.pid;
+    actx.globalAlpha = q.base > 0 ? 0.55 : 0.85; actx.fillStyle = col; actx.fillRect(px - S / 2, pz - S / 2, S, S); actx.globalAlpha = 1;
+    const off = fl.out.has(q.o.key), high = fl.high.has(q.o.key);
+    actx.strokeStyle = sel ? '#ffffff' : off || high ? '#e0303a' : part ? css('--ink') : 'rgba(0,0,0,0.45)'; actx.lineWidth = (sel ? 3 : off || high || part ? 2 : 1) * dpr; actx.setLineDash(high && !sel ? [5 * dpr, 3 * dpr] : []); actx.strokeRect(px - S / 2 + 1, pz - S / 2 + 1, S - 2, S - 2); actx.setLineDash([]);
+    if (S > 46 * dpr) { actx.fillStyle = '#fff'; actx.font = `600 ${10.5 * dpr}px ${css('--f-ui')}`; const nm = (refItem(q.t) || {}).name || ''; actx.fillText((q.base ? 'L' + (q.base + 1) + ' · ' : '') + nm.slice(0, Math.floor(S / (6.2 * dpr))), px - S / 2 + 5 * dpr, pz - S / 2 + 14 * dpr);
+      actx.globalAlpha = 0.85; actx.fillText(q.o.kind === 'added' ? 'connector' : q.o.name, px - S / 2 + 5 * dpr, pz - S / 2 + 27 * dpr); actx.globalAlpha = 1; } }
+  // doors between pieces
+  const ev = AS.ev; if (ev) for (const sm of ev.seams) { if (sm.kind !== 'P' && sm.kind !== 'B') continue; const along = sm.ws === 0 || sm.ws === 2, [px, pz] = a2s(along ? sm.c : sm.u, along ? sm.u : sm.c);
+    actx.fillStyle = sm.kind === 'P' ? '#2fb57f' : '#e0303a'; actx.beginPath(); actx.arc(px, pz, 4 * dpr, 0, 7); actx.fill(); }
+}
+function asmStats() {
+  const a = asmCur(); if (!a) { $('asmStats').textContent = ''; return; } const ps = asmPieces(a), fl = asmFlags(a, ps), ev = AS.ev;
+  const parts = (a.parts || []).length, added = (a.extra || []).length, rem = (a.removed || []).length;
+  $('asmStats').innerHTML = `${parts} cluster${parts === 1 ? '' : 's'} · ${ps.length} pieces${added ? ` (${added} connector${added === 1 ? '' : 's'})` : ''}${rem ? ` · ${rem} removed` : ''}` +
+    (ev ? ` · <span style="color:var(--strong)">${ev.passages} passages</span> · ${ev.blocked ? `<span style="color:var(--weak)">${ev.blocked} blocked</span>` : '0 blocked'} · ${ev.wzones > 1 ? `<span style="color:var(--weak)">${ev.wzones} separate walking zones</span>` : 'all connected'}` : '') +
+    (a.outline && a.outline.length >= 3 ? ` · ${fl.out.size ? `<span style="color:var(--weak)">${fl.out.size} outside the outline</span>` : 'all inside the outline'}` : ' · no outline yet') + (a.height > 0 ? ` · ${fl.high.size ? `<span style="color:var(--weak)">${fl.high.size} over ${a.height} ft</span>` : `under ${a.height} ft`}` : '');
+  const sel = AS.sel && ps.find((q) => q.o.key === AS.sel.key);
+  $('asmSelInfo').textContent = sel ? `${sel.o.kind === 'added' ? 'Connector' : sel.o.name} · ${(refItem(sel.t) || {}).name || sel.t}${sel.base ? ' · level ' + (sel.base + 1) : ''}. ${sel.o.kind === 'added' ? 'Drag to move it.' : 'Drag to move the whole cluster.'}` : 'Click a piece to select it (and its cluster). Drag to move · scroll to zoom · drag empty space to pan.';
+  for (const id of ['asmRotPart']) $(id).disabled = !(sel && sel.o.kind === 'cluster');
+  $('asmRemovePiece').disabled = !sel; $('asmRemovePiece').textContent = sel && sel.o.kind === 'added' ? 'Delete connector' : 'Remove piece';
+  for (const id of ['asmRotPiece', 'asmMirPiece', 'asmUp', 'asmDown']) $(id).disabled = !(sel && sel.o.kind === 'added');
+  $('asmRemovePart').disabled = !(sel && sel.o.kind === 'cluster');
+}
+function asmRenderAll(rebuild3d) { const a = asmCur(); AS.ev = a ? evaluateCluster(asmPieces(a), byIdFull(), 0) : null; renderAsmList(); renderAsmControls(); renderAsmPlan(); asmStats(); if (rebuild3d !== false) renderAsm3D(); }
+function renderAsmList() {
+  const box = $('asmList'); box.innerHTML = ''; if (!AS.list.length) box.innerHTML = '<p class="note">No assemblies yet.</p>';
+  for (const a of AS.list) { const b = document.createElement('button'); b.className = 'clitem' + (a.id === AS.cur ? ' on' : ''); b.innerHTML = `${esc(a.name)}<small>${(a.parts || []).length} clusters</small>`; b.addEventListener('click', () => { AS.cur = a.id; store.set('asmSel', a.id); AS.view = null; AS.sel = null; AS.framed = false; asmRenderAll(); }); box.appendChild(b); }
+  const cl = $('asmClusters'); cl.innerHTML = ''; const a = asmCur();
+  if (!TL.clusters.length) cl.innerHTML = '<p class="note">Make clusters in step 3 first.</p>';
+  for (const c of TL.clusters) { const row = document.createElement('div'); row.className = 'asmrow'; const n = a ? (a.parts || []).filter((p) => p.cl === c.id).length : 0;
+    row.innerHTML = `<span class="dot" style="background:${(PROGRAMS[c.program] || {}).color}"></span><span class="nm">${esc(c.name)}<small>${c.pieces.length} pieces${n ? ` · in this assembly${n > 1 ? ' ×' + n : ''}` : ''}</small></span>`;
+    const add = document.createElement('button'); add.className = 'btn small'; add.textContent = 'Add'; add.disabled = !a; add.addEventListener('click', () => asmAddCluster(c)); row.appendChild(add); cl.appendChild(row); }
+  const lib = $('asmLib'); lib.innerHTML = ''; const { ts } = fitsNow();
+  for (const t of ts) { const b = document.createElement('button'); b.className = 'btn small'; b.style.margin = '0 6px 6px 0'; b.textContent = t.name; b.title = (t.openBottom ? 'Upper only (open bottom)' : 'Ground or upper') + ' · ' + t.storeys + ' storeys'; b.disabled = !a; b.addEventListener('click', () => asmAddConnector(t)); lib.appendChild(b); }
+}
+function renderAsmControls() { const a = asmCur(); $('asmName').value = a ? a.name : ''; $('asmName').disabled = !a; $('asmH').value = a && a.height ? a.height : ''; for (const id of ['asmDraw', 'asmRectSet', 'asmClearOutline', 'asmH', 'asmFit', 'asmConnect', 'asmTrim', 'asmRestore', 'asmDelete', 'asmExport']) $(id).disabled = !a;
+  $('asmDraw').textContent = AS.draw ? 'Finish outline' : 'Draw outline'; $('asmDraw').classList.toggle('primary', !!AS.draw); $('asmRestore').disabled = !a || !(a.removed || []).length; }
+
+/* --- editing --- */
+function asmBBox(ps) { let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const q of ps) { const S = pSize(q) / 2; x0 = Math.min(x0, q.x - S); x1 = Math.max(x1, q.x + S); z0 = Math.min(z0, q.z - S); z1 = Math.max(z1, q.z + S); } return { x0, x1, z0, z1 }; }
+function asmAddCluster(c) { const a = asmCur(); if (!a) return; const ps = asmPieces(a), cb = asmBBox(c.pieces);
+  let x = 0, z = 0; if (ps.length) { const b = asmBBox(ps); x = b.x1 + 10 - cb.x0; z = (b.z0 + b.z1) / 2 - (cb.z0 + cb.z1) / 2; } else if (a.outline && a.outline.length >= 3) { const o = asmBBox(a.outline.map(([px, pz]) => ({ x: px, z: pz, sc: 0 }))); x = (o.x0 + o.x1) / 2 - (cb.x0 + cb.x1) / 2; z = (o.z0 + o.z1) / 2 - (cb.z0 + cb.z1) / 2; }
+  a.parts = (a.parts || []).concat([{ pid: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), cl: c.id, x: Math.round(x), z: Math.round(z), rot: 0 }]); AS.view = null; saveAsm(a); asmRenderAll(); toast(`${c.name} added. Drag it into place, or use Fit to outline.`); }
+function asmAddConnector(t) { const a = asmCur(); if (!a) return; const ps = asmPieces(a), sel = AS.sel && ps.find((q) => q.o.key === AS.sel.key);
+  let x, z, base = 0; if (sel) { x = sel.x + pSize(sel); z = sel.z; base = sel.base; } else { const [cx, cz] = [AS.view ? AS.view.cx : 0, AS.view ? AS.view.cz : 0]; x = cx; z = cz; }
+  if (t.openBottom && base === 0) toast('That tile has an open bottom; it only works stacked on a tall void. Use Up a level.');
+  const pc = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 4), t: t.id, x: Math.round(x), z: Math.round(z), rot: 0, mir: false, sc: 1, base };
+  a.extra = (a.extra || []).concat([pc]); AS.sel = { key: 'x:' + pc.id }; saveAsm(a); asmRenderAll(); }
+function asmSelPiece() { const a = asmCur(); if (!a || !AS.sel) return null; return asmPieces(a).find((q) => q.o.key === AS.sel.key) || null; }
+function asmEditExtra(fn) { const a = asmCur(), s = asmSelPiece(); if (!a || !s || s.o.kind !== 'added') return; const pc = a.extra.find((q) => 'x:' + q.id === s.o.key); if (!pc) return; fn(pc); saveAsm(a); asmRenderAll(); }
+$('asmRotPiece').addEventListener('click', () => asmEditExtra((pc) => { pc.rot = (pc.rot + 1) % 4; }));
+$('asmMirPiece').addEventListener('click', () => asmEditExtra((pc) => { pc.mir = !pc.mir; }));
+$('asmUp').addEventListener('click', () => asmEditExtra((pc) => { pc.base = Math.min(6, pc.base + 1); }));
+$('asmDown').addEventListener('click', () => asmEditExtra((pc) => { pc.base = Math.max(0, pc.base - 1); }));
+$('asmRotPart').addEventListener('click', () => { const a = asmCur(), s = asmSelPiece(); if (!a || !s || s.o.kind !== 'cluster') return; const part = a.parts.find((p) => p.pid === s.o.pid); if (!part) return;
+  // turn about the cluster's centre
+  const before = asmBBox(asmPieces(a).filter((q) => q.o.pid === part.pid)), cx = (before.x0 + before.x1) / 2, cz = (before.z0 + before.z1) / 2; part.rot = ((part.rot || 0) + 1) % 4;
+  const after = asmBBox(asmPieces(a).filter((q) => q.o.pid === part.pid)); part.x += Math.round(cx - (after.x0 + after.x1) / 2); part.z += Math.round(cz - (after.z0 + after.z1) / 2); saveAsm(a); asmRenderAll(); });
+$('asmRemovePiece').addEventListener('click', () => { const a = asmCur(), s = asmSelPiece(); if (!a || !s) return;
+  if (s.o.kind === 'added') a.extra = a.extra.filter((q) => 'x:' + q.id !== s.o.key); else a.removed = (a.removed || []).concat([s.o.key]); AS.sel = null; saveAsm(a); asmRenderAll(); });
+$('asmRemovePart').addEventListener('click', () => { const a = asmCur(), s = asmSelPiece(); if (!a || !s || s.o.kind !== 'cluster') return; a.parts = a.parts.filter((p) => p.pid !== s.o.pid); a.removed = (a.removed || []).filter((k) => !k.startsWith(s.o.pid + ':')); AS.sel = null; saveAsm(a); asmRenderAll(); });
+$('asmRestore').addEventListener('click', () => { const a = asmCur(); if (!a) return; a.removed = []; saveAsm(a); asmRenderAll(); toast('All removed pieces are back.'); });
+$('asmTrim').addEventListener('click', () => { const a = asmCur(); if (!a) return; const ps = asmPieces(a), fl = asmFlags(a, ps); let n = 0;
+  for (const q of ps) if (fl.out.has(q.o.key) || fl.high.has(q.o.key)) { n++; if (q.o.kind === 'added') a.extra = a.extra.filter((x) => 'x:' + x.id !== q.o.key); else a.removed = (a.removed || []).concat([q.o.key]); }
+  // anything left standing on a removed piece goes too
+  for (let g = 0; g < 6; g++) { const ps2 = asmPieces(a), ev = evaluateCluster(ps2, byIdFull(), 0); const fl2 = ps2.filter((q, i) => q.base > 0 && ev.floatIdx && ev.floatIdx.has(i)); if (!fl2.length) break; for (const q of fl2) { n++; if (q.o.kind === 'added') a.extra = a.extra.filter((x) => 'x:' + x.id !== q.o.key); else a.removed = (a.removed || []).concat([q.o.key]); } }
+  saveAsm(a); asmRenderAll(); toast(n ? `Removed ${n} piece${n > 1 ? 's' : ''} outside the outline or over the height limit. Restore brings them back.` : 'Nothing is outside the outline.'); });
+
+/* --- outline --- */
+$('asmDraw').addEventListener('click', () => { const a = asmCur(); if (!a) return;
+  if (!AS.draw) { AS.draw = []; toast('Click the corners of your outline on the plan. Click the first corner (or this button) to finish.'); }
+  else { if (AS.draw.length >= 3) { a.outline = AS.draw.map(([x, z]) => [Math.round(x), Math.round(z)]); saveAsm(a); } AS.draw = null; AS.view = null; } asmRenderAll(false); });
+$('asmRectSet').addEventListener('click', () => { const a = asmCur(); if (!a) return; const w = +$('asmW').value || 120, d = +$('asmD').value || 80; a.outline = [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]]; AS.draw = null; AS.view = null; saveAsm(a); asmRenderAll(false); });
+$('asmClearOutline').addEventListener('click', () => { const a = asmCur(); if (!a) return; a.outline = null; AS.draw = null; saveAsm(a); asmRenderAll(false); });
+$('asmH').addEventListener('change', (e) => { const a = asmCur(); if (!a) return; a.height = Math.max(0, +e.target.value || 0); saveAsm(a); asmRenderAll(false); });
+$('asmName').addEventListener('change', (e) => { const a = asmCur(); if (!a) return; a.name = e.target.value.trim() || a.name; saveAsm(a); renderAsmList(); });
+$('asmNew').addEventListener('click', () => { const a = { id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), kind: 'assembly', name: 'Assembly ' + String.fromCharCode(65 + AS.list.length % 26), outline: null, height: 0, parts: [], extra: [], removed: [], createdAt: Date.now(), by: myClient };
+  AS.list.push(a); AS.cur = a.id; store.set('asmSel', a.id); AS.view = null; AS.sel = null; saveAsm(a); asmRenderAll(); toast('Draw the plan outline (or set a rectangle), then add clusters.'); });
+$('asmDelete').addEventListener('click', async () => { const a = asmCur(); if (!a || !confirmDel(a.name)) return; AS.list = AS.list.filter((x) => x.id !== a.id); AS.cur = AS.list.length ? AS.list[0].id : null;
+  if (!TL.local && DB && canSave) { try { await DB.doc('clusters/' + a.id).delete(); } catch (e) { toast('Could not delete: ' + (e.message || e.code)); } } else store.set('asm', AS.list); asmRenderAll(); });
+function confirmDel(name) { return window.confirm ? window.confirm(`Delete ${name}? The clusters in it are not touched.`) : true; }
+
+/* --- plan interaction --- */
+{ let drag = null;
+  const pt = (e) => { const r = aplan.getBoundingClientRect(), dpr = aplan.width / r.width; return [(e.clientX - r.left) * dpr, (e.clientY - r.top) * dpr]; };
+  const hitPiece = (wx, wz) => { const a = asmCur(); if (!a) return null; const ps = asmPieces(a).sort((p, q) => q.base - p.base); return ps.find((q) => Math.abs(q.x - wx) <= pSize(q) / 2 && Math.abs(q.z - wz) <= pSize(q) / 2) || null; };
+  aplan.addEventListener('pointerdown', (e) => { const a = asmCur(); if (!a || !AS.view) return; const [px, pz] = pt(e), [wx, wz] = s2a(px, pz);
+    if (AS.draw) { if (AS.draw.length >= 3) { const [fx, fz] = a2s(...AS.draw[0]); if (Math.hypot(fx - px, fz - pz) < 12 * (aplan.width / aplan.clientWidth)) { $('asmDraw').click(); return; } } AS.draw.push([Math.round(wx), Math.round(wz)]); renderAsmPlan(); return; }
+    const h = hitPiece(wx, wz); if (h) { AS.sel = { key: h.o.key, pid: h.o.pid }; const part = h.o.kind === 'cluster' ? a.parts.find((p) => p.pid === h.o.pid) : a.extra.find((q) => 'x:' + q.id === h.o.key);
+      drag = { kind: 'move', obj: part, sx: wx, sz: wz, ox: part.x, oz: part.z, moved: false }; asmStats(); renderAsmPlan(); }
+    else { AS.sel = null; drag = { kind: 'pan', px, pz, cx: AS.view.cx, cz: AS.view.cz }; asmStats(); renderAsmPlan(); }
+    aplan.setPointerCapture(e.pointerId); });
+  aplan.addEventListener('pointermove', (e) => { if (!drag) return; const [px, pz] = pt(e);
+    if (drag.kind === 'pan') { AS.view.cx = drag.cx - (px - drag.px) / AS.view.s; AS.view.cz = drag.cz - (pz - drag.pz) / AS.view.s; renderAsmPlan(); return; }
+    const [wx, wz] = s2a(px, pz); drag.obj.x = Math.round(drag.ox + wx - drag.sx); drag.obj.z = Math.round(drag.oz + wz - drag.sz); drag.moved = true; const a = asmCur(); AS.ev = evaluateCluster(asmPieces(a), byIdFull(), 0); renderAsmPlan(); });
+  const end = () => { if (drag && drag.kind === 'move' && drag.moved) { saveAsm(asmCur()); asmRenderAll(); } drag = null; };
+  aplan.addEventListener('pointerup', end); aplan.addEventListener('pointercancel', end);
+  aplan.addEventListener('wheel', (e) => { if (!AS.view) return; e.preventDefault(); const [px, pz] = pt(e), [wx, wz] = s2a(px, pz), k = Math.exp(-Math.max(-120, Math.min(120, e.deltaY)) * 0.006); AS.view.s *= k; const [nx2, nz2] = s2a(px, pz); AS.view.cx += wx - nx2; AS.view.cz += wz - nz2; renderAsmPlan(); }, { passive: false });
+  document.addEventListener('keydown', (e) => { if (!asmOn) return; if (e.key === 'Escape' && AS.draw) { AS.draw = null; renderAsmControls(); renderAsmPlan(); } });
+}
+
+/* --- fit to outline: clusters placed one by one inside the outline, touching what is already placed --- */
+$('asmFit').addEventListener('click', () => { const a = asmCur(); if (!a) return; if (!a.outline || a.outline.length < 3) { toast('Draw the outline first.'); return; } if (!(a.parts || []).length) { toast('Add clusters first.'); return; }
+  status('Fitting the clusters into the outline…'); setTimeout(() => { asmFit(a); saveAsm(a); AS.view = null; asmRenderAll(); const fl = asmFlags(a, asmPieces(a)); status(`Fitted ${a.parts.length} clusters · ${fl.out.size ? fl.out.size + ' pieces still outside (Remove outside trims them)' : 'all pieces inside the outline'}.`, 1); }, 30); });
+function asmFit(a) {
+  const P = a.outline, ob = asmBBox(P.map(([x, z]) => ({ x, z, sc: 0 }))), cx = (ob.x0 + ob.x1) / 2, cz = (ob.z0 + ob.z1) / 2, removed = new Set(a.removed || []);
+  const local = (part, rot) => { const c = asmCluster(part.cl); if (!c) return []; const th = -rot * Math.PI / 2, co = Math.round(Math.cos(th)), si = Math.round(Math.sin(th)); return c.pieces.map((pc, k) => ({ x: pc.x * co + pc.z * si, z: -pc.x * si + pc.z * co, sc: pc.sc, base: pc.base, t: pc.t, key: part.pid + ':' + k })).filter((q) => !removed.has(q.key)); };
+  const placed = [], parts = a.parts.slice().sort((p, q) => local(q, 0).length - local(p, 0).length);
+  const top = (q) => q.base + ((refItem(q.t) && tileFeetFor(q.t)) ? tileFeetFor(q.t).storeys : 1);
+  for (const part of parts) { let best = null, bs = -Infinity;
+    for (let rot = 0; rot < 4; rot++) { const L = local(part, rot); if (!L.length) continue; const lb = asmBBox(L), lcx = (lb.x0 + lb.x1) / 2, lcz = (lb.z0 + lb.z1) / 2;
+      for (let X = ob.x0 - 10; X <= ob.x1 + 10; X += 3) for (let Z = ob.z0 - 10; Z <= ob.z1 + 10; Z += 3) { const dx = X - lcx, dz = Z - lcz; let inside = 0, overlap = false, contact = 0;
+        for (const q of L) { const w = { x: q.x + dx, z: q.z + dz, sc: q.sc }; inside += pieceInside(w, P); const S = pSize(w) / 2;
+          for (const o of placed) { const So = pSize(o) / 2, ox = Math.min(w.x + S, o.x + So) - Math.max(w.x - S, o.x - So), oz = Math.min(w.z + S, o.z + So) - Math.max(w.z - S, o.z - So);
+            if (ox > 0.5 && oz > 0.5 && q.base < top(o) && o.base < top(q)) { overlap = true; break; } if (q.base === o.base && ((ox > 3 && Math.abs(oz) <= 0.6) || (oz > 3 && Math.abs(ox) <= 0.6))) contact += Math.max(ox, oz); }
+          if (overlap) break; }
+        if (overlap) continue; const sc = 60 * inside / L.length + 0.25 * contact - 0.05 * Math.hypot(X - cx, Z - cz); if (sc > bs) { bs = sc; best = { rot, dx: Math.round(dx), dz: Math.round(dz) }; } } }
+    if (!best) continue; const cl0 = asmCluster(part.cl); part.rot = best.rot; part.x = best.dx; part.z = best.dz; for (const q of local(part, best.rot)) placed.push(Object.assign(q, { x: q.x + best.dx, z: q.z + best.dz })); }
+}
+
+/* --- auto-connect: where clusters can't be walked between, try a connector piece that links their doors --- */
+$('asmConnect').addEventListener('click', () => { const a = asmCur(); if (!a) return; status('Looking for connector pieces between the clusters…'); setTimeout(() => { const n = asmConnect(a); saveAsm(a); asmRenderAll(); const ev = AS.ev; status(n ? `Added ${n} connector${n > 1 ? 's' : ''} · ${ev && ev.wzones > 1 ? ev.wzones + ' walking zones remain' : 'everything is walkable as one'}.` : (AS.ev && AS.ev.wzones <= 1 ? 'Already one connected building.' : 'No single tile could link the separate parts here; try moving the clusters closer or add a connector by hand.'), 1); }, 30); });
+function asmConnect(a) {
+  const tb = byIdFull(), { ts } = fitsNow(), ground = ts.filter((t) => !t.openBottom); let added = 0;
+  for (let round = 0; round < 6; round++) { const ps = asmPieces(a), ev = evaluateCluster(ps, tb, 0); if (ev.wzones <= 1) break;
+    const size = new Map(); ev.wroot.forEach((r) => size.set(r, (size.get(r) || 0) + 1)); const main = [...size.entries()].sort((x, y) => y[1] - x[1])[0][0];
+    const A = ps.filter((q, i) => ev.wroot[i] === main && q.base === 0), B = ps.filter((q, i) => ev.wroot[i] !== main && q.base === 0); if (!A.length || !B.length) break;
+    const near = A.filter((q) => B.some((o) => Math.hypot(o.x - q.x, o.z - q.z) < 3.2 * pSize(q))); let best = null, bs = -Infinity;
+    for (const q of near) for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const t of ground) for (let rot = 0; rot < 4; rot++) for (const off of [0, -8, 8]) {
+      const S = (pSize(q) + TILE_FT) / 2, pc = { id: 'c', t: t.id, x: Math.round(q.x + dx * S + (dz ? off : 0)), z: Math.round(q.z + dz * S + (dx ? off : 0)), rot, mir: false, sc: 1, base: 0 };
+      const trial = ps.concat([Object.assign({}, pc, { o: { kind: 'added', key: 'trial' } })]), e2 = evaluateCluster(trial, tb, 0);
+      if (e2.overlaps > ev.overlaps || e2.blocked > ev.blocked || e2.wzones >= ev.wzones) continue;
+      const sc = 30 * (ev.wzones - e2.wzones) + 2 * (e2.passages - ev.passages) + (a.outline && a.outline.length >= 3 ? 10 * pieceInside(pc, a.outline) : 0); if (sc > bs) { bs = sc; best = pc; } }
+    if (!best) break; best.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5); a.extra = (a.extra || []).concat([best]); added++; }
+  return added;
+}
+
+/* --- 3D: pieces coloured by origin, or the whole assembly fused (still coloured by origin) --- */
+const asmCanvas = $('asmViewer'), asmr = new THREE.WebGLRenderer({ canvas: asmCanvas, antialias: true }); asmr.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); asmr.localClippingEnabled = true;
+const asmScene = new THREE.Scene(); addLights(asmScene); asmScene.background = new THREE.Color(css('--viewer') || '#0a0c0f');
+const asmCam = new THREE.PerspectiveCamera(35, 1.6, 1, 8000); asmCam.position.set(200, 180, 260);
+const asmCtl = new OrbitControls(asmCam, asmCanvas); asmCtl.enableDamping = true; asmCtl.dampingFactor = 0.12; asmCtl.screenSpacePanning = true; asmCtl.zoomToCursor = true; asmCtl.zoomSpeed = 3;
+const asmGroup = new THREE.Group(); asmScene.add(asmGroup); const asmSecSt = sectionUI($('asmSec'), () => applySection(asmGroup, asmSecSt));
+function sizeAsm3() { const w = asmCanvas.clientWidth; if (!w) return; const h = Math.round(w * 0.6); asmr.setSize(w, h, false); asmCam.aspect = w / h; asmCam.updateProjectionMatrix(); }
+new ResizeObserver(sizeAsm3).observe(asmCanvas);
+(function asmloop() { if (asmOn) { asmCtl.update(); asmr.render(asmScene, asmCam); } requestAnimationFrame(asmloop); })();
+function asmFrame() { const box = new THREE.Box3().setFromObject(asmGroup); if (box.isEmpty()) return; const c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length() / 2;
+  const dir = new THREE.Vector3(0.55, 0.55, 0.63).normalize(), dist = r / Math.sin(THREE.MathUtils.degToRad(asmCam.fov / 2)) * 0.95; asmCtl.target.copy(c); asmCam.position.copy(c).addScaledVector(dir, dist); asmCam.near = dist / 100; asmCam.far = dist * 20; asmCam.updateProjectionMatrix(); asmCtl.update(); AS.framed = true; }
+asmCanvas.addEventListener('dblclick', asmFrame);
+function asmClearGroup() { while (asmGroup.children.length) { const o = asmGroup.children.pop(); o.traverse && o.traverse((m) => { if (m.isMesh && m.userData.own) { m.geometry.dispose(); } }); } }
+function renderAsm3D() {
+  if (!asmOn) return; asmClearGroup(); const a = asmCur(); if (!a) return; const ps = asmPieces(a), H = TL.set.H; if (!ps.length) return;
+  const ev = AS.ev || evaluateCluster(ps, byIdFull(), 0);
+  if (AS.fuse) { const g = asmFuseRequest(a, ps, ev); if (g) { const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0, side: THREE.DoubleSide })); asmGroup.add(m); } }
+  if (!AS.fuse || !AS.fusedReady) ps.forEach((pc, i) => { const f = refItem(pc.t) ? tileFeetFor(pc.t) : null; if (!f) return; const sc = pc.sc || 1;
+    const col = new THREE.Color(asmColor(pc.o)).lerp(new THREE.Color(0xdedbd5), 0.35), m = new THREE.Mesh(ev.roofCut && ev.roofCut.has(i) && f.cutGeom ? f.cutGeom : f.geom, new THREE.MeshStandardMaterial({ color: col, roughness: 0.75, metalness: 0, side: THREE.DoubleSide }));
+    m.scale.set(pc.mir ? -sc : sc, 1, sc); m.rotation.y = -pc.rot * Math.PI / 2; m.position.set(pc.x, pc.base * H, pc.z); asmGroup.add(m); });
+  if (a.outline && a.outline.length >= 3) { const pts = a.outline.concat([a.outline[0]]).map(([x, z]) => new THREE.Vector3(x, 0.05, z)); asmGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xe2589a })));
+    if (a.height > 0) { const top = pts.map((p) => new THREE.Vector3(p.x, a.height, p.z)); asmGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(top), new THREE.LineDashedMaterial({ color: 0xe2589a, dashSize: 3, gapSize: 2 })).computeLineDistances()); } }
+  if (AS.paths) asmPaths(a, ps, ev);
+  applySection(asmGroup, asmSecSt); if (!AS.framed) asmFrame();
+}
+function asmSig(a, ps, voxel) { return JSON.stringify([ps.map((q) => [q.t, q.x, q.z, q.rot, !!q.mir, q.sc || 1, q.base]), TL.set.H, TILE_FT, voxel, a.fz || {}, REF.items.map((it) => it.id + tileSig(it)).join()]); }
+function asmZOf(ps, ev) { const zs = new Map(); return (i) => { const pc = ps[i]; if (!refItem(pc.t)) return null; const cut = !!(ev.roofCut && ev.roofCut.has(i)), key = pc.t + (cut ? '|c' : ''); if (!zs.has(key)) zs.set(key, fuseDataFor(pc.t, cut)); return zs.get(key); }; }
+function asmFuseRequest(a, ps, ev) {
+  const voxel = 0.6, sig = asmSig(a, ps, voxel) + AS.color; if (AS.baseSig === sig && AS.geom) { AS.fusedReady = true; return AS.geom; }
+  AS.fusedReady = false; const tok = ++AS.tok; status('Fusing the assembly into one form…');
+  setTimeout(() => { if (tok !== AS.tok) return; let base; try { base = fuseCluster(ps, asmZOf(ps, ev), ev, Object.assign({ H: TL.set.H, voxel }, FZ_DEF, a.fz || {})); } catch (e) { console.warn('asm fuse', e); toast('Could not fuse this assembly.'); return; }
+    if (!base || tok !== AS.tok) return; const mesh = fuseNets(base.D, base.nx, base.ny, base.nz, base.v, base.x0, base.y0, base.z0); AS.base = base;
+    // colour each point of the fused surface by the piece it comes from
+    const P = mesh.positions, col = new Float32Array(P.length), items = base.items, cols = items.map((q) => new THREE.Color(asmColor(ps[q.i].o)).lerp(new THREE.Color(0xdedbd5), 0.25));
+    for (let v = 0; v < P.length; v += 3) { const X = P[v], Y = P[v + 1], Z = P[v + 2]; let bi = -1, bd = Infinity;
+      for (let j = 0; j < items.length; j++) { const q = items[j], S = q.S / 2 + 1.5; if (Math.abs(X - q.pc.x) > S || Math.abs(Z - q.pc.z) > S || Y < q.bot - 1 || Y > q.top + 1) continue; const d = q.f(X, Y, Z); if (d < bd) { bd = d; bi = j; } }
+      const c = bi >= 0 ? cols[bi] : new THREE.Color(0xdedbd5); col[v] = c.r; col[v + 1] = c.g; col[v + 2] = c.b; }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setIndex(new THREE.BufferAttribute(mesh.indices, 1)); g.computeVertexNormals();
+    if (AS.geom) AS.geom.dispose(); AS.geom = g; AS.mesh = mesh; AS.baseSig = sig; AS.pathData = null; status(`Assembly fused · one continuous form, coloured by ${AS.color === 'cluster' ? 'cluster' : AS.color === 'program' ? 'program' : 'original model'} (connectors in grey).`, 1); renderAsm3D(); }, 40);
+  return null;
+}
+function asmPaths(a, ps, ev) {
+  const sig = asmSig(a, ps, AS.fuse ? 0.6 : 0.5) + (AS.fuse ? 'F' : 'P');
+  if (AS.pathData && AS.pathSig === sig) { drawCirculation(asmGroup, AS.pathData); return; }
+  if (AS.fuse && !(AS.base && AS.fusedReady)) return; // after the fused form is ready
+  setTimeout(() => { try { const base = AS.fuse ? AS.base : fuseCluster(ps, asmZOf(ps, ev), ev, { H: TL.set.H, voxel: 0.5, blend: 1.5, smooth: 1, open: 'none', clear: 0 });
+      AS.pathData = circulation(base, withStoreys(ps), ev, TL.set.H); AS.pathSig = sig; renderAsm3D(); } catch (e) { console.warn('asm paths', e); } }, 30);
+}
+$('asmColor').addEventListener('change', (e) => { AS.color = e.target.value; renderAsmPlan(); renderAsm3D(); });
+$('asmFuse').addEventListener('change', (e) => { AS.fuse = e.target.checked; AS.pathData = null; renderAsm3D(); });
+$('asmPathsChk').addEventListener('change', (e) => { AS.paths = e.target.checked; renderAsm3D(); });
+$('asmExport').addEventListener('click', async () => { const a = asmCur(); if (!a) return; if (!AS.fuse || !AS.mesh) { toast('Tick Fuse first: the export is the assembly as one fused solid.'); return; } await saveFusedSTL(AS.mesh, a.name); });
+
+function showAsm(on) {
+  if (on && state.running) { toast('Wait for the SOM run to finish.'); return; }
+  if (on) { if (refineOn) showRefine(false); if (tilingOn) showTiling(false); if (fuseOn) showFuse(false); }
+  asmOn = on; document.body.classList.toggle('asm-mode', on); $('asmApp').hidden = !on; renderTypoTabs();
+  if (on) { requestAnimationFrame(() => { sizeAsmPlan(); sizeAsm3(); asmRenderAll(); }); prepAll(); status(AS.list.length ? 'Assemble · combine clusters, fit them into your outline, and fuse them into one building.' : 'Assemble · make an assembly, draw the plan outline, then add clusters.', 1); }
 }
 
 /* ---------------- boot ---------------- */
