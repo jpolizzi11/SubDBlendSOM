@@ -171,7 +171,8 @@ body.fuse-mode main.app:not(#fuseApp),body.fuse-mode #runBtn,body.fuse-mode #ban
 #fzViewer{width:100%;display:block;background:var(--viewer);touch-action:none;cursor:grab}#fzViewer.brush{cursor:crosshair}
 .clprog{margin-top:12px}.clhead{display:flex;align-items:center;gap:8px;margin-bottom:6px}.clhead .btn{margin-left:auto}.clhead .dot{width:10px;height:10px;border-radius:50%}
 .clitem{display:block;width:100%;text-align:left;border:1px solid transparent;background:transparent;border-radius:6px;padding:5px 10px;cursor:pointer;font-weight:600;color:var(--ink)}.clitem:hover{background:var(--sunk)}.clitem.on{border-color:var(--accent);background:var(--sunk)}.clitem small{color:var(--muted);font-weight:500;margin-left:6px}
-.clname{font:inherit;font-size:15px;font-weight:700;border:1px solid transparent;background:transparent;color:var(--ink);border-radius:6px;padding:4px 6px;min-width:0;flex:1}.clname:hover,.clname:focus{border-color:var(--line)}
+.clrow{display:flex;align-items:center;gap:2px}.clrow .clitem{flex:1;min-width:0}.clren{border:0;background:transparent;color:var(--muted);cursor:pointer;border-radius:6px;padding:4px 8px;font-size:14px;opacity:.55}.clren:hover,.clren:focus-visible{opacity:1;background:var(--sunk);color:var(--ink)}.clrename{font:inherit;font-weight:600;width:100%;box-sizing:border-box;border:1px solid var(--accent);border-radius:6px;padding:5px 10px;background:var(--sunk);color:var(--ink);margin:1px 0}
+.clname{font:inherit;font-size:15px;font-weight:700;border:1px dashed var(--line);background:transparent;color:var(--ink);border-radius:6px;padding:4px 6px;min-width:0;flex:1}.clname:hover,.clname:focus{border-color:var(--line)}
 #tilePlan{touch-action:none}
 .tileitem{cursor:pointer}.tileitem:hover{border-color:var(--muted)}.rolebar{display:flex;height:5px;border-radius:3px;overflow:hidden;margin-top:5px;background:var(--sunk)}.rolebar i{display:block;height:100%}
 #tilePlan{width:100%;display:block;cursor:pointer;border-radius:6px;background:var(--sunk)}#tileViewer{width:100%;display:block;background:var(--viewer);touch-action:none;cursor:grab}#tileViewer:active{cursor:grabbing}
@@ -528,7 +529,7 @@ details.sub > .settings { padding-bottom: 6px; }
   <div class="col">
     <section class="panel">
       <div class="maptools">
-        <input type="text" id="tClName" class="clname" maxlength="60" aria-label="Cluster name" placeholder="No cluster open">
+        <input type="text" id="tClName" class="clname" maxlength="60" aria-label="Cluster name" title="Click to rename" placeholder="No cluster open">
         <span class="actions" style="margin:0">
           <button class="btn small primary" id="tBranch">Branch</button>
           <button class="btn small" id="tFit">Fit view</button>
@@ -5367,10 +5368,20 @@ function renderClusterList() {
     const tree = []; const walk = (kids, d) => kids.sort((a, b) => a.createdAt - b.createdAt).forEach((c) => { tree.push({ c, d }); walk(mine.filter((q) => q.parent === c.id), d + 1); });
     walk(mine.filter((c) => !c.parent || !mine.some((q) => q.id === c.parent)), 0);
     return `<div class="clprog"><div class="clhead"><span class="dot" style="background:${P.color}"></span><b>${P.label}</b> <span class="num">${mine.length}</span><button class="btn small" data-new="${k}">New ${P.label.toLowerCase()} cluster</button></div>` +
-      (tree.length ? tree.map(({ c, d }) => `<button class="clitem${c.id === TL.cur ? ' on' : ''}" data-id="${c.id}" style="padding-left:${10 + d * 16}px">${d ? '↳ ' : ''}${esc(c.name)} <small>${c.pieces.length} pieces${c.layout ? ` · ${c.layout.rows}×${c.layout.cols}${c.layout.tiers > 1 ? '×' + c.layout.tiers : ''}` : ''}</small></button>`).join('') : '<p class="note" style="margin:4px 0 0">None yet.</p>') + '</div>';
+      (tree.length ? tree.map(({ c, d }) => `<div class="clrow" data-row="${c.id}"><button class="clitem${c.id === TL.cur ? ' on' : ''}" data-id="${c.id}" title="Double-click to rename" style="padding-left:${10 + d * 16}px">${d ? '↳ ' : ''}${esc(c.name)} <small>${c.pieces.length} pieces${c.layout ? ` · ${c.layout.rows}×${c.layout.cols}${c.layout.tiers > 1 ? '×' + c.layout.tiers : ''}` : ''}</small></button><button class="clren" data-ren="${c.id}" title="Rename" aria-label="Rename ${esc(c.name)}">✎</button></div>`).join('') : '<p class="note" style="margin:4px 0 0">None yet.</p>') + '</div>';
   }).join('');
   box.querySelectorAll('[data-new]').forEach((b) => b.addEventListener('click', () => newCluster(b.dataset.new)));
-  box.querySelectorAll('.clitem').forEach((b) => b.addEventListener('click', () => openCluster(b.dataset.id)));
+  box.querySelectorAll('.clitem').forEach((b) => { b.addEventListener('click', () => openCluster(b.dataset.id)); b.addEventListener('dblclick', () => renameClusterInline(b.dataset.id)); });
+  box.querySelectorAll('[data-ren]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); renameClusterInline(b.dataset.ren); }));
+}
+// rename in place: the row turns into a text box; Enter or clicking away saves, Esc cancels
+function renameClusterInline(id) {
+  const c = TL.clusters.find((q) => q.id === id), row = document.querySelector(`[data-row="${id}"]`); if (!c || !row) return;
+  const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'clrename'; inp.maxLength = 60; inp.value = c.name; inp.setAttribute('aria-label', 'Cluster name');
+  row.replaceWith(inp); inp.focus(); inp.select(); let done = false;
+  const finish = (save) => { if (done) return; done = true; const v = inp.value.trim(); if (save && v && v !== c.name) { c.name = v; saveCluster(c); if (TL.cur === id) $('tClName').value = v; } renderClusterList(); };
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); });
+  inp.addEventListener('blur', () => finish(true));
 }
 function openCluster(id) { TL.cur = id; store.set('clSel', id); TL.pick = -1; TL.level = 0; TL.view = null; tFramed = false; renderAll(); renderLibrary(); }
 const SCALE_OPTS = { fixed: [1, 1], small: [0.85, 1.15], medium: [0.75, 1.3], large: [0.65, 1.5] };
