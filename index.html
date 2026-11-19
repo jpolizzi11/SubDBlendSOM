@@ -5532,13 +5532,13 @@ startTiling();
    from one piece into another are the traversal surfaces: each is tinted, and its centreline (the middle of the walkway) is
    traced as one continuous line with branches into side areas. Void cores add vertical links between levels. */
 function circulation(grid, pieces, ev, H) {
-  const { D, nx, ny, nz, v, x0, y0, z0 } = grid, sxy = nx * ny, out = { paths: [], surfaces: [], lifts: [], dbg: {} };
+  const { D, nx, ny, nz, v, x0, y0, z0 } = grid, sxy = nx * ny, out = { paths: [], surfaces: [], lifts: [] };
   const at = (X, Y, Z) => { const ix = Math.round((X - x0) / v), iy = Math.round((Y - y0) / v), iz = Math.round((Z - z0) / v); return ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz ? 1e3 : D[ix + iy * nx + iz * sxy]; };
   let maxL = 0; for (const pc of pieces) maxL = Math.max(maxL, pc.base + (pc.storeys || 1));
   const N2 = nx * nz, N8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
   // networks: every walkable surface is a node; doorways and ramps between levels join nodes. Only networks that link pieces are drawn.
   const par = new Map(), node = new Map(), find = (a) => { while (par.get(a) !== a) { par.set(a, par.get(par.get(a))); a = par.get(a); } return a; }, unite = (a, b) => { a = find(a); b = find(b); if (a !== b) par.set(a, b); };
-  const allP = [], allS = [], lvls = []; let prevLab = null, prevHf = null, prevG = -1;
+  const allP = [], allS = [], lvls = [], doorPair = new Set(); let prevLab = null, prevHf = null, prevG = -1;
   for (let g = 0; g < maxL; g++) { const yf = g * H, walk = new Uint8Array(N2), hf = new Float32Array(N2);
     for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) { const X = x0 + ix * v, Z = z0 + iz * v;
       let ys = null; for (let y = yf + 1.6; y >= yf - 1.2; y -= v * 0.5) if (at(X, y, Z) < 0) { ys = y; break; } if (ys == null) continue;
@@ -5572,7 +5572,7 @@ function circulation(grid, pieces, ev, H) {
       const sa = lab[ca], sb = lab[cb]; if (sa === sb) continue; const key = Math.min(sa, sb) + '|' + Math.max(sa, sb) + '|' + Math.round(X) + '|' + Math.round(Z); if (joined.has(key)) continue; joined.add(key);
       const pa = [x0 + (ca % nx) * v, hf[ca] + 0.35, z0 + ((ca / nx) | 0) * v], pb = [x0 + (cb % nx) * v, hf[cb] + 0.35, z0 + ((cb / nx) | 0) * v], mid = [X, (pa[1] + pb[1]) / 2, Z];
       const qa = nearest(sa, pa), qb = nearest(sb, pb); const line = [qa, pa, mid, pb, qb].filter(Boolean);
-      if (line.length >= 2) { const na = g * 1e6 + sa, nb2 = g * 1e6 + sb; unite(na, nb2); node.get(na).door = node.get(nb2).door = true; } }
+      if (line.length >= 2) { const na = g * 1e6 + sa, nb2 = g * 1e6 + sb; unite(na, nb2); node.get(na).door = node.get(nb2).door = true; doorPair.add(Math.min(na, nb2) + '|' + Math.max(na, nb2)); } }
     // ramps and stairs: the same floor seen from two levels joins them
     if (prevLab && prevG === g - 1) for (let c = 0; c < N2; c++) { const a = lab[c], b = prevLab[c]; if (a < 0 || b < 0) continue; const na = g * 1e6 + a, nb2 = prevG * 1e6 + b; if (node.has(na) && node.has(nb2) && Math.abs(hf[c] - prevHf[c]) < 1.1) unite(na, nb2); }
     prevLab = lab; prevHf = hf; prevG = g; lvls.push({ g, lab, hf });
@@ -5591,11 +5591,12 @@ function circulation(grid, pieces, ev, H) {
     for (const i of on) for (const j of on) { if (i === j) continue; const A = pieces[i], B = pieces[j];
       for (const ws of [0, 1]) { const ea = edgeOf(A, ws), eb = edgeOf(B, ws + 2); if (Math.abs(ea.c - eb.c) > 2.5) continue; const o0 = Math.max(ea.a, eb.a) + 1, o1 = Math.min(ea.b, eb.b) - 1; if (o1 - o0 < 2) continue;
         const c = (ea.c + eb.c) / 2, along = ws === 0, pt = (n, u) => along ? cellAt(n, u) : cellAt(u, n);
-        // the widest stretch of the shared edge where you can walk straight across
-        if (!out.smp) out.smp = {}; if (!out.smp[g]) { const um = (o0 + o1) / 2; let r = ''; for (let t = -6; t <= 6; t += v) { const q = pt(c + t, um); r += q < 0 ? 'x' : lab[q] < 0 ? '.' : gid(q) < 0 ? 'n' : String(lab[q] % 10); } out.smp[g] = [i, j, ws, c.toFixed(1), um.toFixed(1), r, A.x, A.z, B.x, B.z]; }
-        let run = [], bestRun = []; for (let u = o0; u <= o1 + 1e-6; u += v) { const ia = gid(pt(c - 1.5, u)), ib = gid(pt(c + 1.5, u)), im = gid(pt(c, u));
-          const ok = ia >= 0 && ib >= 0 && im >= 0 && find(ia) === find(ib) && find(im) === find(ia) && keep(ia); { const t = (out.dbg[g + '|' + i + '|' + j] = out.dbg[g + '|' + i + '|' + j] || [0, 0, 0, 0, 0, 0]); t[0]++; if (ia >= 0) t[1]++; if (ib >= 0) t[2]++; if (im >= 0) t[3]++; if (ia >= 0 && ib >= 0 && find(ia) === find(ib)) t[4]++; if (ok) t[5]++; } if (ok) run.push(u); if (!ok || u + v > o1 + 1e-6) { if (run.length > bestRun.length) bestRun = run; run = []; } }
-        if (bestRun.length * v < 2) continue; const um = bestRun[(bestRun.length / 2) | 0], dc = pt(c, um), net = find(gid(dc)); const door = P3(dc, hf);
+        // the widest stretch of the shared edge you can walk across: one floor running through, or a doorway between the two floors
+        let run = [], bestRun = [], side = (u, sg) => { for (let t = 0.6; t <= 4.5; t += v) { const q = pt(c + sg * t, u); if (gid(q) >= 0) return q; } return -1; };
+        for (let u = o0; u <= o1 + 1e-6; u += v) { const ca = side(u, -1), cb = side(u, 1), ia = gid(ca), ib = gid(cb);
+          const im = gid(pt(c, u)), ok = ia >= 0 && ib >= 0 && keep(ia) && ((ia === ib && im === ia) || doorPair.has(Math.min(ia, ib) + '|' + Math.max(ia, ib))); if (ok) run.push([u, ca, cb]); if (!ok || u + v > o1 + 1e-6) { if (run.length > bestRun.length) bestRun = run; run = []; } }
+        if (bestRun.length * v < 2) continue; const [um, ca, cb] = bestRun[(bestRun.length / 2) | 0], net = find(gid(ca)), dc = pt(c, um);
+        const door = [along ? c : um, (hf[ca] + hf[cb]) / 2 + 0.35, along ? um : c];
         for (const k of [i, j]) { const h = hub(k, net); if (h < 0) continue; const key = k + '|' + g + '|' + dc; if (seg.has(key)) continue; seg.add(key); out.paths.push([P3(h, hf), door]); } } } }
   for (const q of allS) if (keep(q.nid)) out.surfaces.push(q.s);
   return out;
