@@ -5169,6 +5169,7 @@ const byIdFull = () => { const m = new Map(fitsNow().ts.map((t) => [t.id, t])); 
 function prepAll() {
   if (TL.prepJob) return TL.prepJob;
   TL.prepJob = (async () => {
+    await 0; // let the job be recorded first, so an empty run can't leave a finished job looking busy
     try {
       const need = REF.items.filter((it) => { const p = TL.pre.get(it.id); return !(p && p.sig === tileSig(it) && p.r === (TL.set.detail || 64)); });
       for (let k = 0; k < need.length; k++) { if (!tilingOn && !fuseOn && !asmOn) break; $('tileProg').textContent = `Reading tiles ${k + 1}/${need.length}: ${need[k].name}…`;
