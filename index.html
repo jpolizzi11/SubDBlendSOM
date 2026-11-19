@@ -5525,7 +5525,7 @@ startTiling();
    from one piece into another are the traversal surfaces: each is tinted, and its centreline (the middle of the walkway) is
    traced as one continuous line with branches into side areas. Void cores add vertical links between levels. */
 function circulation(grid, pieces, ev, H) {
-  const { D, nx, ny, nz, v, x0, y0, z0 } = grid, sxy = nx * ny, out = { paths: [], surfaces: [], lifts: [] };
+  const { D, nx, ny, nz, v, x0, y0, z0 } = grid, sxy = nx * ny, out = { paths: [], surfaces: [], lifts: [], dbg: {} };
   const at = (X, Y, Z) => { const ix = Math.round((X - x0) / v), iy = Math.round((Y - y0) / v), iz = Math.round((Z - z0) / v); return ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz ? 1e3 : D[ix + iy * nx + iz * sxy]; };
   let maxL = 0; for (const pc of pieces) maxL = Math.max(maxL, pc.base + (pc.storeys || 1));
   const N2 = nx * nz, N8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -5586,7 +5586,7 @@ function circulation(grid, pieces, ev, H) {
         const c = (ea.c + eb.c) / 2, along = ws === 0, pt = (n, u) => along ? cellAt(n, u) : cellAt(u, n);
         // the widest stretch of the shared edge where you can walk straight across
         let run = [], bestRun = []; for (let u = o0; u <= o1 + 1e-6; u += v) { const ia = gid(pt(c - 1.5, u)), ib = gid(pt(c + 1.5, u)), im = gid(pt(c, u));
-          const ok = ia >= 0 && ib >= 0 && im >= 0 && find(ia) === find(ib) && find(im) === find(ia) && keep(ia); if (ok) run.push(u); if (!ok || u + v > o1 + 1e-6) { if (run.length > bestRun.length) bestRun = run; run = []; } }
+          const ok = ia >= 0 && ib >= 0 && im >= 0 && find(ia) === find(ib) && find(im) === find(ia) && keep(ia); { const t = (out.dbg[g + '|' + i + '|' + j] = out.dbg[g + '|' + i + '|' + j] || [0, 0, 0, 0, 0, 0]); t[0]++; if (ia >= 0) t[1]++; if (ib >= 0) t[2]++; if (im >= 0) t[3]++; if (ia >= 0 && ib >= 0 && find(ia) === find(ib)) t[4]++; if (ok) t[5]++; } if (ok) run.push(u); if (!ok || u + v > o1 + 1e-6) { if (run.length > bestRun.length) bestRun = run; run = []; } }
         if (bestRun.length * v < 2) continue; const um = bestRun[(bestRun.length / 2) | 0], dc = pt(c, um), net = find(gid(dc)); const door = P3(dc, hf);
         for (const k of [i, j]) { const h = hub(k, net); if (h < 0) continue; const key = k + '|' + g + '|' + dc; if (seg.has(key)) continue; seg.add(key); out.paths.push([P3(h, hf), door]); } } } }
   for (const q of allS) if (keep(q.nid)) out.surfaces.push(q.s);
