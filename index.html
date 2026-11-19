@@ -5129,8 +5129,10 @@ function solidBase(F, R, levels) {
 // finished tiles are saved in this browser (IndexedDB), so a reload reads them back instead of rebuilding every tile from the source models.
 // Bump TILE_CACHE_VER whenever the way a tile is built changes, so old saved tiles are not used.
 const TILE_CACHE_VER = 1;
-const tcDB = (() => { let pr; return () => pr || (pr = new Promise((res) => { try { const q = indexedDB.open('sbs-tiles', 1); q.onupgradeneeded = () => q.result.createObjectStore('t'); q.onsuccess = () => res(q.result); q.onerror = () => res(null); } catch { res(null); } })); })();
-async function tcGet(key) { const db = await tcDB(); if (!db) return null; return new Promise((res) => { try { const q = db.transaction('t').objectStore('t').get(key); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); } catch { res(null); } }); }
+const tcDB = (() => { let pr; return () => pr || (pr = new Promise((res) => { const to = setTimeout(() => res(null), 3000); const done = (v) => { clearTimeout(to); res(v); }; // never let the cache hold up the tiles
+  try { const q = indexedDB.open('sbs-tiles', 2); q.onupgradeneeded = () => { if (!q.result.objectStoreNames.contains('t')) q.result.createObjectStore('t'); };
+    q.onsuccess = () => { const db = q.result; db.onversionchange = () => db.close(); done(db.objectStoreNames.contains('t') ? db : null); }; q.onerror = q.onblocked = () => done(null); } catch { done(null); } })); })();
+async function tcGet(key) { const db = await tcDB(); if (!db) return null; return new Promise((res) => { setTimeout(() => res(null), 3000); try { const q = db.transaction('t').objectStore('t').get(key); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); } catch { res(null); } }); }
 async function tcPut(key, val) { const db = await tcDB(); if (!db) return; try { const st = db.transaction('t', 'readwrite').objectStore('t'); st.put(val, key); } catch (e) { console.warn('tile cache', e); } }
 async function tilePrep(it) {
   const sig = tileSig(it), r = TL.set.detail || 64; let p = TL.pre.get(it.id);
