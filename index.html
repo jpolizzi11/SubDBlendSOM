@@ -171,6 +171,7 @@ body.fuse-mode main.app:not(#fuseApp),body.fuse-mode #runBtn,body.fuse-mode #ban
 #fzViewer{width:100%;display:block;background:var(--viewer);touch-action:none;cursor:grab}#fzViewer.brush{cursor:crosshair}
 .clprog{margin-top:12px}.clhead{display:flex;align-items:center;gap:8px;margin-bottom:6px}.clhead .btn{margin-left:auto}.clhead .dot{width:10px;height:10px;border-radius:50%}
 .clitem{display:block;width:100%;text-align:left;border:1px solid transparent;background:transparent;border-radius:6px;padding:5px 10px;cursor:pointer;font-weight:600;color:var(--ink)}.clitem:hover{background:var(--sunk)}.clitem.on{border-color:var(--accent);background:var(--sunk)}.clitem small{color:var(--muted);font-weight:500;margin-left:6px}
+.fullsite{margin-left:auto;align-self:center;font-size:12px;color:var(--muted);text-decoration:none;padding:6px 10px;border-radius:6px}.fullsite:hover{color:var(--ink);background:var(--sunk)}body.build #typoTabs,body.build #tToFuse{display:none}
 .clrow{display:flex;align-items:center;gap:2px}.clrow .clitem{flex:1;min-width:0}.clren{border:0;background:transparent;color:var(--muted);cursor:pointer;border-radius:6px;padding:4px 8px;font-size:14px;opacity:.55}.clren:hover,.clren:focus-visible{opacity:1;background:var(--sunk);color:var(--ink)}.clrename{font:inherit;font-weight:600;width:100%;box-sizing:border-box;border:1px solid var(--accent);border-radius:6px;padding:5px 10px;background:var(--sunk);color:var(--ink);margin:1px 0}
 .clname{font:inherit;font-size:15px;font-weight:700;border:1px dashed var(--line);background:transparent;color:var(--ink);border-radius:6px;padding:4px 6px;min-width:0;flex:1}.clname:hover,.clname:focus{border-color:var(--line)}
 #tilePlan{touch-action:none}
@@ -2126,12 +2127,15 @@ function showLoadError(key, e) {
 }
 async function preloadAll() { for (const t of TYPOLOGIES) { try { await presetModels(t.key); } catch {} } }
 function updateSlidesBtn() { const b = $('dlSlides'); if (!b) return; const t = typoOf(curTypo); b.hidden = !t; b.disabled = !(state.res && t); }
+const BUILD = new URLSearchParams(location.search).has('build'); // the light site: only Clusters and Assemble
 function renderTypoTabs() {
   const nav = $('stepNav'); nav.innerHTML = '';
   const steps = [['SOM map', '', !refineOn && !tilingOn && !fuseOn && !asmOn, () => { if (asmOn) showAsm(false); if (fuseOn) showFuse(false); if (refineOn) showRefine(false); if (tilingOn) showTiling(false); }],
     ['Refine', `${REF.items.length}`, refineOn, () => { if (asmOn) showAsm(false); if (fuseOn) showFuse(false); if (tilingOn) showTiling(false); showRefine(true); }], ['Clusters', '', tilingOn, () => { if (asmOn) showAsm(false); if (fuseOn) showFuse(false); showTiling(true); }],
     ['Fuse', FZ ? `${fuseSent().length || ''}` : '', fuseOn, () => { if (asmOn) showAsm(false); showFuse(true); }], ['Assemble', AS ? `${AS.list.length || ''}` : '', asmOn, () => showAsm(true)]];
-  steps.forEach(([lab, sm, on, fn], i) => { const b = document.createElement('button'); b.setAttribute('aria-pressed', String(on)); b.innerHTML = `<b>${i + 1}</b>${lab}${sm ? `<small>${sm}</small>` : ''}`; b.addEventListener('click', fn); nav.appendChild(b); });
+  const shown = BUILD ? steps.filter((_, i) => i === 2 || i === 4) : steps;
+  shown.forEach(([lab, sm, on, fn], i) => { const b = document.createElement('button'); b.setAttribute('aria-pressed', String(on)); b.innerHTML = `<b>${i + 1}</b>${lab}${sm ? `<small>${sm}</small>` : ''}`; b.addEventListener('click', fn); nav.appendChild(b); });
+  if (BUILD) { const a = document.createElement('a'); a.href = location.pathname; a.className = 'fullsite'; a.textContent = 'Full site'; a.title = 'Open every step (SOM map, Refine, Fuse)'; nav.appendChild(a); }
   const box = $('typoTabs'); box.innerHTML = '';
   TABS.forEach((t, i) => {
     if (i === 0) { const sep = document.createElement('span'); sep.className = 'tabsep'; sep.style.marginLeft = '0'; sep.textContent = 'Typologies'; box.appendChild(sep); }
@@ -5122,9 +5126,16 @@ function solidBase(F, R, levels) {
     for (let y = Math.max(0, y0 - 2); y <= Math.min(R - 1, Math.ceil(top) + 2); y++) { const yc = y + 0.5, slab = Math.max(m, bot - yc, yc - top) / R, i = x + y * R + z * R2; if (slab < G[i]) G[i] = slab; } }
   return G;
 }
+// finished tiles are saved in this browser (IndexedDB), so a reload reads them back instead of rebuilding every tile from the source models.
+// Bump TILE_CACHE_VER whenever the way a tile is built changes, so old saved tiles are not used.
+const TILE_CACHE_VER = 1;
+const tcDB = (() => { let pr; return () => pr || (pr = new Promise((res) => { try { const q = indexedDB.open('sbs-tiles', 1); q.onupgradeneeded = () => q.result.createObjectStore('t'); q.onsuccess = () => res(q.result); q.onerror = () => res(null); } catch { res(null); } })); })();
+async function tcGet(key) { const db = await tcDB(); if (!db) return null; return new Promise((res) => { try { const q = db.transaction('t').objectStore('t').get(key); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); } catch { res(null); } }); }
+async function tcPut(key, val) { const db = await tcDB(); if (!db) return; try { const st = db.transaction('t', 'readwrite').objectStore('t'); st.put(val, key); } catch (e) { console.warn('tile cache', e); } }
 async function tilePrep(it) {
   const sig = tileSig(it), r = TL.set.detail || 64; let p = TL.pre.get(it.id);
   if (p && p.sig === sig && p.r === r) return p;
+  const ck = [it.id, sig, r, TILE_CACHE_VER].join('|'); { const hit = await tcGet(ck); if (hit && hit.sig === sig && hit.r === r) { TL.pre.set(it.id, hit); TL.feet.delete(it.id); return hit; } }
   let b = await refPipeline(it, r); const R = b.fullR, sc = b.R / R;
   const vo0 = tileVoids(b.field, R, 32), base = vo0.openFrac >= 0.1 ? null : (Fs) => solidBase(Fs, R, b.levels); // ground pieces get one solid base slab
   const F = b.field; // doors, floors and voids are read from the model as refined; the solid base only changes the geometry
@@ -5135,7 +5146,7 @@ async function tilePrep(it) {
   p = { sig, r, mesh: b.mesh, levels: b.levels.filter((l) => l.n >= 0.02 * R * R).map((l) => ({ h: l.h * sc, n: l.n })), lin: b.lin, og: sideOpenGrids(F, R, 0.15), k: sc, open: tileOpenness(F, R, 0.15), foot, vo, tallVoid, openBottom };
   { const FR = Math.min(R, 64), dn = (G) => (FR === R ? Float32Array.from(G) : C.resample(G, R, FR)); p.F = dn(Fgeo); p.FR = FR; if (tallVoid) p.Fcut = dn(roofCut(Fgeo, R, vo)); } // lighter copies of the field, for Fuse
   if (tallVoid) { try { p.cutMesh = (await refPipeline(it, r, (Fs) => roofCut(base ? base(Fs) : Fs, R, vo))).mesh; } catch (e) { console.warn('roof cut', e); } }
-  TL.pre.set(it.id, p); TL.feet.delete(it.id); return p;
+  TL.pre.set(it.id, p); TL.feet.delete(it.id); tcPut(ck, p); return p;
 }
 function tileFeetFor(id) {
   const p = TL.pre.get(id); if (!p) return null; const H = TL.set.H;
@@ -6081,7 +6092,8 @@ function showAsm(on) {
 /* ---------------- boot ---------------- */
 window.__sbs = { get TL() { return TL; }, get REF() { return REF; }, get AS() { return AS; }, prepAll, tileFull, evaluateCluster, asmPieces, asmCur, byIdFull, pSize, fuseCluster, edgeOf }; // read-only debugging handle
 renderCrit(); renderSettings(); renderModels(); renderPicks(); renderInspector(); sizeViewer(); sizeMap();
-{ const t0 = store.get('typo', 'gathering'); renderTypoTabs(); switchTypo(TABS.some((t) => t.key === t0) ? t0 : 'gathering').then(preloadAll); }
+if (BUILD) { document.body.classList.add('build'); document.title = 'SubD Blend SOM · Clusters'; showTiling(true); } // the light site skips the SOM map's start-up work
+else { const t0 = store.get('typo', 'gathering'); renderTypoTabs(); switchTypo(TABS.some((t) => t.key === t0) ? t0 : 'gathering').then(preloadAll); }
 </script>
 
 </body></html>
