@@ -4944,7 +4944,7 @@ function fuseCluster(pieces, zOf, ev, opts) {
             const ii = ix + iy * nx + iz * sxy, fill = db + (1 - w) * 0.6; if (fill < D[ii]) { const h = Math.max(1.2 - Math.abs(fill - D[ii]), 0) / 1.2; D[ii] = Math.min(fill, D[ii]) - h * h * 0.3; } near[ii] = Math.max(near[ii], 2); } } } } }
   // 1b. floor holes: on each level, the slab under every piece that stands there is checked; gaps between pieces and holes
   // are patched (all of them on the ground floor; on upper floors only holes up to holesMax sq ft, so real voids stay open)
-  let holes = 0; { const levels = [...new Set(items.filter((q) => !q.openBottom).map((q) => q.pc.base))];
+  let holes = 0; const slabs = []; { const levels = [...new Set(items.filter((q) => !q.openBottom).map((q) => q.pc.base))];
     for (const g of levels) { const yf = g * H, region = new Uint8Array(nx * nz), solid = new Uint8Array(nx * nz);
       for (const q of items) { if (q.pc.base !== g || q.openBottom) continue; const S = q.S / 2 + 1.5;
         for (let iz = Math.max(0, Math.floor((q.pc.z - S - z0) / v)); iz <= Math.min(nz - 1, Math.ceil((q.pc.z + S - z0) / v)); iz++) for (let ix = Math.max(0, Math.floor((q.pc.x - S - x0) / v)); ix <= Math.min(nx - 1, Math.ceil((q.pc.x + S - x0) / v)); ix++) region[ix + iz * nx] = 1; }
@@ -4971,7 +4971,7 @@ function fuseCluster(pieces, zOf, ev, opts) {
       for (let c0 = 0; c0 < nx * nz; c0++) { if (solid[c0] || seen[c0] || !region[c0]) continue; const comp = [c0], q2 = [c0]; seen[c0] = 1; let touchesOut = false;
         while (q2.length) { const c = q2.pop(), x = c % nx, z = (c / nx) | 0; for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const a = x + dx, b = z + dz; if (a < 0 || b < 0 || a >= nx || b >= nz) { touchesOut = true; continue; } const q = a + b * nx; if (solid[q] || seen[q]) continue; if (!region[q]) { touchesOut = true; continue; } seen[q] = 1; comp.push(q); q2.push(q); } }
         const area = comp.length * v * v; if (!touchesOut && (g === 0 || area <= holesMax)) for (const c of comp) fill[c] = 1; }
-      let n = 0; for (let c = 0; c < nx * nz; c++) { if (!fill[c]) continue; n++; const ix = c % nx, iz = (c / nx) | 0;
+      let n = 0; for (let c = 0; c < nx * nz; c++) { if (!fill[c]) continue; n++; const ix = c % nx, iz = (c / nx) | 0; slabs.push(c, yf);
         for (let iy = Math.max(0, Math.floor((yf - 1.6 - y0) / v)); iy <= Math.min(ny - 1, Math.ceil((yf + 0.6 - y0) / v)); iy++) { const Y = y0 + iy * v, sd = Math.max(yf - 1 - Y, Y - yf), i = ix + iy * nx + iz * sxy; if (sd < D[i]) D[i] = sd; near[i] = Math.max(near[i], 2); } }
       if (n) holes++; } }
   // 2. walkable slots: a low opening at floor level through a thin wall (lower than 7 ft, wall continuing above) is raised to 7 ft
@@ -5001,6 +5001,9 @@ function fuseCluster(pieces, zOf, ev, opts) {
     for (let pass = 0; pass < smoothN; pass++) { T.set(D);
       for (let iz = 1; iz < nz - 1; iz++) for (let iy = 1; iy < ny - 1; iy++) for (let ix = 1; ix < nx - 1; ix++) { const i = ix + iy * nx + iz * sxy; if (!mask[i]) continue;
         D[i] = (T[i] * 2 + T[i - 1] + T[i + 1] + T[i - nx] + T[i + nx] + T[i - sxy] + T[i + sxy]) / 8; } } }
+  // the floor patches go back in after smoothing (a thin slab would otherwise be averaged away with the air around it)
+  for (let k2 = 0; k2 < slabs.length; k2 += 2) { const c = slabs[k2], yf = slabs[k2 + 1], ix = c % nx, iz = (c / nx) | 0;
+    for (let iy = Math.max(0, Math.floor((yf - 1.6 - y0) / v)); iy <= Math.min(ny - 1, Math.ceil((yf + 0.6 - y0) / v)); iy++) { const Y = y0 + iy * v, sd = Math.max(yf - 1 - Y, Y - yf), i = ix + iy * nx + iz * sxy; if (sd < D[i]) D[i] = sd; } }
   // openings: a box from just above the floor to door height, cut through the wall(s) to the room behind on each side
   const cuts = []; const doorTop = Math.min(8, 0.7 * H);
   const sdfAt = (X, Y, Z) => { let m = 1e3; for (const q of items) { const S = q.S / 2; if (Math.abs(X - q.pc.x) > S + 0.5 || Math.abs(Z - q.pc.z) > S + 0.5 || Y < q.bot || Y > q.top) continue; m = Math.min(m, q.f(X, Y, Z)); } return m; };
