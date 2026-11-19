@@ -4955,6 +4955,17 @@ function fuseCluster(pieces, zOf, ev, opts) {
           for (let d = -r; d <= r && !hit; d++) { const a = ix + d, b = iz + d; if (a >= 0 && a < nx && A[a + iz * nx] === val) hit = true; if (b >= 0 && b < nz && A[ix + b * nx] === val) hit = true; } if (hit) B[c] = val; } return B; };
       const closed = grow(grow(solid, 1), 0); const fill = new Uint8Array(nx * nz);
       for (let c = 0; c < nx * nz; c++) if (region[c] && !solid[c] && closed[c]) fill[c] = 1;
+      // seams: models rarely reach the very edge of their tile, so two touching pieces leave a slot between their floors.
+      // Along every shared edge, each row is bridged from one floor to the other (up to 10 ft); rows with no floor on a side stay open
+      const onLvl = items.filter((q) => q.pc.base === g && !q.openBottom), cellAt = (X, Z) => { const ix = Math.round((X - x0) / v), iz = Math.round((Z - z0) / v); return ix < 0 || iz < 0 || ix >= nx || iz >= nz ? -1 : ix + iz * nx; };
+      for (const A of onLvl) for (const B of onLvl) { if (A === B) continue;
+        for (const ws of [0, 1]) { const ea = edgeOf(A.pc, ws), eb = edgeOf(B.pc, ws + 2); if (Math.abs(ea.c - eb.c) > 2.5) continue; const o0 = Math.max(ea.a, eb.a), o1 = Math.min(ea.b, eb.b); if (o1 - o0 < 1) continue;
+          const c = (ea.c + eb.c) / 2, along = ws === 0, pt = (n, u) => along ? cellAt(n, u) : cellAt(u, n);
+          for (let u = o0 + v / 2; u <= o1 - v / 2; u += v) { let dA = -1, dB = -1;
+            for (let t = 0; t <= 8; t += v) { const q = pt(c - t, u); if (q >= 0 && solid[q]) { dA = t; break; } }
+            for (let t = 0; t <= 8; t += v) { const q = pt(c + t, u); if (q >= 0 && solid[q]) { dB = t; break; } }
+            if (dA < 0 || dB < 0 || dA + dB > 10) continue;
+            for (let t = -dA; t <= dB; t += v / 2) { const q = pt(c + t, u); if (q >= 0 && !solid[q]) fill[q] = 1; } } } }
       // enclosed holes (not reachable from the outside of the region)
       const seen = new Uint8Array(nx * nz);
       for (let c0 = 0; c0 < nx * nz; c0++) { if (solid[c0] || seen[c0] || !region[c0]) continue; const comp = [c0], q2 = [c0]; seen[c0] = 1; let touchesOut = false;
