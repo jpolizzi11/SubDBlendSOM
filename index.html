@@ -5550,9 +5550,6 @@ function circulation(grid, pieces, ev, H) {
   const at = (X, Y, Z) => { const ix = Math.round((X - x0) / v), iy = Math.round((Y - y0) / v), iz = Math.round((Z - z0) / v); return ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz ? 1e3 : D[ix + iy * nx + iz * sxy]; };
   let maxL = 0; for (const pc of pieces) maxL = Math.max(maxL, pc.base + (pc.storeys || 1));
   const N2 = nx * nz, N8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-  // networks: every walkable surface is a node; doorways and ramps between levels join nodes. Only networks that link pieces are drawn.
-  const par = new Map(), node = new Map(), find = (a) => { while (par.get(a) !== a) { par.set(a, par.get(par.get(a))); a = par.get(a); } return a; }, unite = (a, b) => { a = find(a); b = find(b); if (a !== b) par.set(a, b); };
-  const allP = [], allS = [], lvls = [], doorPair = new Set(); let prevLab = null, prevHf = null, prevG = -1;
   for (let g = 0; g < maxL; g++) { const yf = g * H, walk = new Uint8Array(N2), hf = new Float32Array(N2);
     for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) { const X = x0 + ix * v, Z = z0 + iz * v;
       let ys = null; for (let y = yf + 1.6; y >= yf - 1.2; y -= v * 0.5) if (at(X, y, Z) < 0) { ys = y; break; } if (ys == null) continue;
@@ -5569,13 +5566,49 @@ function circulation(grid, pieces, ev, H) {
       comps.push(cells); }
     const here = pieces.filter((pc) => pc.base <= g && g < pc.base + (pc.storeys || 1)), drawn = new Map(), levelPaths = [];
     for (let sid = 0; sid < comps.length; sid++) { const cells = comps[sid]; if (cells.length * v * v < 40) continue;
-      const cnt = new Map(); for (const c of cells) { const X = x0 + (c % nx) * v, Z = z0 + ((c / nx) | 0) * v; pieces.forEach((pc, k) => { if (!(pc.base <= g && g < pc.base + (pc.storeys || 1))) return; const S = pSize(pc) / 2; if (Math.abs(X - pc.x) < S && Math.abs(Z - pc.z) < S) cnt.set(k, (cnt.get(k) || 0) + 1); }); }
-      const touched = new Set([...cnt].filter(([, n]) => n * v * v >= 25).map(([k]) => k)); if (!touched.size) continue; // a piece counts once a real patch of floor (25 sq ft) lies in it
-      const nid = g * 1e6 + sid; par.set(nid, nid); // roof cover: how much of this floor has something overhead (an open roof deck has none)
-      let cov = 0, smp = 0; for (let k2 = 0; k2 < cells.length; k2 += 3) { const c = cells[k2], X = x0 + (c % nx) * v, Z = z0 + ((c / nx) | 0) * v; smp++; for (let y = hf[c] + 7; y <= hf[c] + 2.5 * H; y += v) if (at(X, y, Z) < 0) { cov++; break; } }
-      node.set(nid, { pieces: touched, ground: g === 0, door: false, cover: smp ? cov / smp : 0, cells });
+      const touched = new Set(); for (const c of cells) { const X = x0 + (c % nx) * v, Z = z0 + ((c / nx) | 0) * v; here.forEach((pc, k) => { const S = pSize(pc) / 2; if (Math.abs(X - pc.x) < S && Math.abs(Z - pc.z) < S) touched.add(k); }); }
+      if (touched.size < 1 || (touched.size < 2 && g > 0)) continue; // upper levels: only surfaces that carry you between pieces; the ground floor: every walkable area
       drawn.set(sid, []);
-      allS.push({ nid, s: { cells: cells.map((c) => [x0 + (c % nx) * v, hf[c], z0 + ((c / nx) | 0) * v]), v } });
+      out.surfaces.push({ cells: cells.map((c) => [x0 + (c % nx) * v, hf[c], z0 + ((c / nx) | 0) * v]), v });
+      // centreline: thin the surface to a one-cell skeleton (Zhang-Suen)
+      let minx = nx, maxx = 0, minz = nz, maxz = 0; for (const c of cells) { const x = c % nx, z = (c / nx) | 0; minx = Math.min(minx, x); maxx = Math.max(maxx, x); minz = Math.min(minz, z); maxz = Math.max(maxz, z); }
+      const w = maxx - minx + 3, h = maxz - minz + 3, M = new Uint8Array(w * h); for (const c of cells) M[(c % nx) - minx + 1 + (((c / nx) | 0) - minz + 1) * w] = 1;
+      const P = (i) => [M[i - w], M[i - w + 1], M[i + 1], M[i + w + 1], M[i + w], M[i + w - 1], M[i - 1], M[i - w - 1]];
+      for (let changed = true, it = 0; changed && it < 200; it++) { changed = false;
+        for (const step of [0, 1]) { const del = [];
+          for (let z = 1; z < h - 1; z++) for (let x = 1; x < w - 1; x++) { const i = x + z * w; if (!M[i]) continue; const p = P(i), B = p.reduce((a, b) => a + b, 0); if (B < 2 || B > 6) continue;
+            let A = 0; for (let k = 0; k < 8; k++) if (!p[k] && p[(k + 1) % 8]) A++; if (A !== 1) continue;
+            if (step === 0 ? (p[0] * p[2] * p[4] || p[2] * p[4] * p[6]) : (p[0] * p[2] * p[6] || p[0] * p[4] * p[6])) continue; del.push(i); }
+          for (const i of del) M[i] = 0; if (del.length) changed = true; } }
+      // skeleton graph; prune short spurs
+      const sk = []; for (let i = 0; i < w * h; i++) if (M[i]) sk.push(i);
+      const deg = (i) => { let n = 0; for (const d of [-w - 1, -w, -w + 1, -1, 1, w - 1, w, w + 1]) if (M[i + d]) n++; return n; };
+      const spur = Math.round(5 / v);
+      for (let pass = 0; pass < 3; pass++) for (const e of sk) { if (!M[e] || deg(e) !== 1) continue; const chain = [e]; let cur = e, prev = -1;
+        while (chain.length <= spur) { let nxt = -1, n = 0; for (const d of [-w - 1, -w, -w + 1, -1, 1, w - 1, w, w + 1]) { const q = cur + d; if (M[q] && q !== prev && !chain.includes(q)) { n++; nxt = q; } } if (n !== 1) break; if (deg(nxt) > 2) break; prev = cur; cur = nxt; chain.push(cur); }
+        if (chain.length <= spur && chain.length < sk.length / 2) for (const q of chain) M[q] = 0; }
+      // trace continuous lines: the longest line first, then branches off it
+      const live = new Set(); for (let i = 0; i < w * h; i++) if (M[i]) live.add(i);
+      const N8i = [-w - 1, -w, -w + 1, -1, 1, w - 1, w, w + 1];
+      const bfs = (starts) => { const dist = new Map(), par = new Map(), q = [...starts]; for (const s of starts) { dist.set(s, 0); par.set(s, -1); }
+        for (let k = 0; k < q.length; k++) { const c = q[k]; for (const d of N8i) { const n = c + d; if (!live.has(n) || dist.has(n)) continue; dist.set(n, dist.get(c) + 1); par.set(n, c); q.push(n); } } return { dist, par }; };
+      const far = (m) => { let b = -1, bd = -1; for (const [c, d] of m) if (d > bd) { bd = d; b = c; } return [b, bd]; };
+      const used = new Set(); let guard = 0;
+      while (live.size && guard++ < 40) {
+        let starts = [...live].filter((c) => N8i.some((d) => used.has(c + d)));
+        let a; if (!starts.length) { const s0 = live.values().next().value; [a] = far(bfs([s0]).dist); starts = [a]; }
+        const r1 = bfs(starts); const [b, len] = far(r1.dist); if (b < 0) break;
+        const line = []; for (let c = b; c >= 0; c = r1.par.get(c)) line.push(c);
+        // a branch keeps its joint with the line it grows from, so the drawing stays continuous
+        const first = line[line.length - 1], joint = N8i.map((d) => first + d).find((n) => used.has(n)); if (joint !== undefined) line.push(joint);
+        for (const c of line) { live.delete(c); used.add(c); }
+        // anything still connected to what was just traced only through this line becomes later branches; tiny leftovers go
+        if (len * v < 3 && joint !== undefined) continue;
+        let pts = line.map((i) => { const x = (i % w) - 1 + minx, z = ((i / w) | 0) - 1 + minz; return [x0 + x * v, hf[x + z * nx] + 0.35, z0 + z * v]; });
+        const step = Math.max(1, Math.round(1.5 / v)); pts = pts.filter((_, k) => k % step === 0 || k === pts.length - 1);
+        for (let it = 0; it < 3 && pts.length > 2; it++) { const q = [pts[0]]; for (let k = 0; k < pts.length - 1; k++) { const p0 = pts[k], p1 = pts[k + 1]; q.push(p0.map((u, j) => u * 0.75 + p1[j] * 0.25), p0.map((u, j) => u * 0.25 + p1[j] * 0.75)); } q.push(pts[pts.length - 1]); pts = q; }
+        if (pts.length >= 2) { out.paths.push(pts); drawn.get(sid).push(pts); }
+      }
     }
     // doorways: where a door joins two walkable areas, their lines are joined through it, so the route stays continuous
     const sideCell = (X, Z) => { const cx = Math.round((X - x0) / v), cz = Math.round((Z - z0) / v), r = Math.ceil(3 / v); let best = -1, bd = Infinity;
@@ -5588,43 +5621,8 @@ function circulation(grid, pieces, ev, H) {
       const sa = lab[ca], sb = lab[cb]; if (sa === sb) continue; const key = Math.min(sa, sb) + '|' + Math.max(sa, sb) + '|' + Math.round(X) + '|' + Math.round(Z); if (joined.has(key)) continue; joined.add(key);
       const pa = [x0 + (ca % nx) * v, hf[ca] + 0.35, z0 + ((ca / nx) | 0) * v], pb = [x0 + (cb % nx) * v, hf[cb] + 0.35, z0 + ((cb / nx) | 0) * v], mid = [X, (pa[1] + pb[1]) / 2, Z];
       const qa = nearest(sa, pa), qb = nearest(sb, pb); const line = [qa, pa, mid, pb, qb].filter(Boolean);
-      if (line.length >= 2) { const na = g * 1e6 + sa, nb2 = g * 1e6 + sb; unite(na, nb2); node.get(na).door = node.get(nb2).door = true; doorPair.add(Math.min(na, nb2) + '|' + Math.max(na, nb2)); } }
-    // ramps and stairs: the same floor seen from two levels joins them
-    if (prevLab && prevG === g - 1) for (let c = 0; c < N2; c++) { const a = lab[c], b = prevLab[c]; if (a < 0 || b < 0) continue; const na = g * 1e6 + a, nb2 = prevG * 1e6 + b; if (node.has(na) && node.has(nb2) && Math.abs(hf[c] - prevHf[c]) < 1.1) unite(na, nb2); }
-    prevLab = lab; prevHf = hf; prevG = g; lvls.push({ g, lab, hf });
+      if (line.length >= 2) out.paths.push(line); }
   }
-  // keep every floor you can stand on inside the building; drop open roof decks (nothing overhead) that are not reached through a doorway
-  const keep = (id) => { const n = node.get(id); return !!n && (n.ground || n.cover >= 0.35 || n.door); };
-  // the route diagram: on each floor, a point at the middle of each piece; straight lines to each doorway into a neighbour,
-  // and straight branches out along the floor where no doorway line already goes
-  const cellAt = (X, Z) => { const ix = Math.round((X - x0) / v), iz = Math.round((Z - z0) / v); return ix < 0 || iz < 0 || ix >= nx || iz >= nz ? -1 : ix + iz * nx; };
-  const P3 = (c, hfa) => [x0 + (c % nx) * v, hfa[c] + 0.35, z0 + ((c / nx) | 0) * v], seg = new Set();
-  for (const { g, lab, hf } of lvls) { const gid = (c) => (c >= 0 && lab[c] >= 0 && node.has(g * 1e6 + lab[c])) ? g * 1e6 + lab[c] : -1;
-    const on = pieces.map((pc, k) => k).filter((k) => pieces[k].base <= g && g < pieces[k].base + (pieces[k].storeys || 1));
-    const inPc = (k, X, Z) => { const pc = pieces[k], S = pSize(pc) / 2; return Math.abs(X - pc.x) <= S && Math.abs(Z - pc.z) <= S; };
-    const hubOf = new Map(), dirs = new Map(), hub = (k, sid) => { const key = k + '|' + sid; if (hubOf.has(key)) return hubOf.get(key); const pc = pieces[k], S = pSize(pc) / 2 - 1; let best = -1, bd = Infinity, n = 0;
-      for (let Z = pc.z - S; Z <= pc.z + S; Z += v) for (let X = pc.x - S; X <= pc.x + S; X += v) { const c = cellAt(X, Z); if (gid(c) !== sid) continue; n++; const d = (X - pc.x) ** 2 + (Z - pc.z) ** 2; if (d < bd) { bd = d; best = c; } }
-      if (n * v * v < 40) best = -1; hubOf.set(key, best); return best; };
-    const addLine = (k, sid, h, p, hfa) => { const key = k + '|' + sid + '|' + p.map((x) => Math.round(x)).join(); if (seg.has(key)) return; seg.add(key); const a = P3(h, hfa); out.paths.push([a, p]);
-      const dk = k + '|' + sid; if (!dirs.has(dk)) dirs.set(dk, []); dirs.get(dk).push(Math.atan2(p[2] - a[2], p[0] - a[0])); };
-    // doorways between pieces
-    for (const i of on) for (const j of on) { if (i === j) continue; const A = pieces[i], B = pieces[j];
-      for (const ws of [0, 1]) { const ea = edgeOf(A, ws), eb = edgeOf(B, ws + 2); if (Math.abs(ea.c - eb.c) > 2.5) continue; const o0 = Math.max(ea.a, eb.a) + 1, o1 = Math.min(ea.b, eb.b) - 1; if (o1 - o0 < 2) continue;
-        const c = (ea.c + eb.c) / 2, along = ws === 0, pt = (n, u) => along ? cellAt(n, u) : cellAt(u, n);
-        // the widest stretch of the shared edge you can walk across: one floor running through, or a doorway between the two floors
-        let run = [], bestRun = [], side = (u, sg) => { for (let t = 0.6; t <= 4.5; t += v) { const q = pt(c + sg * t, u); if (gid(q) >= 0) return q; } return -1; };
-        for (let u = o0; u <= o1 + 1e-6; u += v) { const ca = side(u, -1), cb = side(u, 1), ia = gid(ca), ib = gid(cb);
-          const im = gid(pt(c, u)), ok = ia >= 0 && ib >= 0 && keep(ia) && keep(ib) && ((ia === ib && im === ia) || doorPair.has(Math.min(ia, ib) + '|' + Math.max(ia, ib))); if (ok) run.push([u, ca, cb]); if (!ok || u + v > o1 + 1e-6) { if (run.length > bestRun.length) bestRun = run; run = []; } }
-        if (bestRun.length * v < 2) continue; const [um, ca, cb] = bestRun[(bestRun.length / 2) | 0];
-        const door = [along ? c : um, (hf[ca] + hf[cb]) / 2 + 0.35, along ? um : c];
-        const ha = hub(i, gid(ca)), hb = hub(j, gid(cb)); if (ha >= 0) addLine(i, gid(ca), ha, door, hf); if (hb >= 0) addLine(j, gid(cb), hb, door, hf); } }
-    // branches: from each piece's centre point, straight out along the floor in the four plan directions (where no doorway line already runs)
-    const sids = [...new Set(Array.from(lab).filter((x) => x >= 0))].map((x) => g * 1e6 + x).filter((id) => node.has(id) && keep(id));
-    for (const sid of sids) for (const k of on) { const h = hub(k, sid); if (h < 0) continue; const hx = x0 + (h % nx) * v, hz = z0 + ((h / nx) | 0) * v, have = dirs.get(k + '|' + sid) || [];
-      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const ang = Math.atan2(dz, dx); if (have.some((a) => Math.abs(Math.atan2(Math.sin(a - ang), Math.cos(a - ang))) < 0.6)) continue;
-        let L = 0, miss = 0, last = h; for (let t = v; t < 40; t += v) { const X = hx + dx * t, Z = hz + dz * t; if (!inPc(k, X, Z)) break; const c = cellAt(X, Z); if (gid(c) === sid) { L = t; last = c; miss = 0; } else if (++miss > Math.ceil(1.2 / v)) break; }
-        if (L >= 6) addLine(k, sid, h, P3(last, hf), hf); } } }
-  for (const q of allS) if (keep(q.nid)) out.surfaces.push(q.s);
   return out;
 }
 // draw: walkable traversal surfaces tinted green on the floor, continuous red centrelines over the massing
