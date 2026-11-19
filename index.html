@@ -4948,7 +4948,9 @@ function fuseCluster(pieces, zOf, ev, opts) {
     for (const g of levels) { const yf = g * H, region = new Uint8Array(nx * nz), solid = new Uint8Array(nx * nz);
       for (const q of items) { if (q.pc.base !== g || q.openBottom) continue; const S = q.S / 2 + 1.5;
         for (let iz = Math.max(0, Math.floor((q.pc.z - S - z0) / v)); iz <= Math.min(nz - 1, Math.ceil((q.pc.z + S - z0) / v)); iz++) for (let ix = Math.max(0, Math.floor((q.pc.x - S - x0) / v)); ix <= Math.min(nx - 1, Math.ceil((q.pc.x + S - x0) / v)); ix++) region[ix + iz * nx] = 1; }
-      for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) { const c = ix + iz * nx; if (region[c] && (at(x0 + ix * v, yf - 0.5, z0 + iz * v) < 0 || at(x0 + ix * v, yf - 0.15, z0 + iz * v) < 0)) solid[c] = 1; }
+      const top = new Float32Array(nx * nz).fill(yf); // floor surface height per column (models' floors sit a little below the level line)
+      for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) { const c = ix + iz * nx; if (!region[c]) continue; const X = x0 + ix * v, Z = z0 + iz * v;
+        for (let y = yf + 0.3; y >= yf - 1.4; y -= v / 2) if (at(X, y, Z) < 0) { solid[c] = 1; top[c] = Math.min(yf, y + v / 2); break; } }
       // close narrow gaps: grow the slab by r, then shrink it back (only inside the region)
       const r = Math.max(1, Math.round(2 / v)), grow = (A, val) => { const B = Uint8Array.from(A);
         for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) { const c = ix + iz * nx; if (A[c] === val) continue; let hit = false;
@@ -4965,14 +4967,19 @@ function fuseCluster(pieces, zOf, ev, opts) {
             for (let t = 0; t <= 8; t += v) { const q = pt(c - t, u); if (q >= 0 && solid[q]) { dA = t; break; } }
             for (let t = 0; t <= 8; t += v) { const q = pt(c + t, u); if (q >= 0 && solid[q]) { dB = t; break; } }
             if (dA < 0 || dB < 0 || dA + dB > 10) continue;
-            for (let t = -dA; t <= dB; t += v / 2) { const q = pt(c + t, u); if (q >= 0 && !solid[q]) fill[q] = 1; } } } }
+            const ta = top[pt(c - dA, u)], tb2 = top[pt(c + dB, u)]; for (let t = -dA; t <= dB; t += v / 2) { const q = pt(c + t, u); if (q >= 0 && !solid[q]) { fill[q] = 1; top[q] = ta + (tb2 - ta) * (t + dA) / Math.max(v, dA + dB); } } } } }
       // enclosed holes (not reachable from the outside of the region)
       const seen = new Uint8Array(nx * nz);
       for (let c0 = 0; c0 < nx * nz; c0++) { if (solid[c0] || seen[c0] || !region[c0]) continue; const comp = [c0], q2 = [c0]; seen[c0] = 1; let touchesOut = false;
         while (q2.length) { const c = q2.pop(), x = c % nx, z = (c / nx) | 0; for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const a = x + dx, b = z + dz; if (a < 0 || b < 0 || a >= nx || b >= nz) { touchesOut = true; continue; } const q = a + b * nx; if (solid[q] || seen[q]) continue; if (!region[q]) { touchesOut = true; continue; } seen[q] = 1; comp.push(q); q2.push(q); } }
         const area = comp.length * v * v; if (!touchesOut && (g === 0 || area <= holesMax)) for (const c of comp) fill[c] = 1; }
-      let n = 0; for (let c = 0; c < nx * nz; c++) { if (!fill[c]) continue; n++; const ix = c % nx, iz = (c / nx) | 0; slabs.push(c, yf);
-        for (let iy = Math.max(0, Math.floor((yf - 1.6 - y0) / v)); iy <= Math.min(ny - 1, Math.ceil((yf + 0.6 - y0) / v)); iy++) { const Y = y0 + iy * v, sd = Math.max(yf - 1 - Y, Y - yf), i = ix + iy * nx + iz * sxy; if (sd < D[i]) D[i] = sd; near[i] = Math.max(near[i], 2); } }
+      // patched cells take the floor height of the floor around them
+      { const known = Uint8Array.from(solid); for (let c = 0; c < nx * nz; c++) if (fill[c] && top[c] !== yf) known[c] = 1;
+        for (let pass = 0; pass < 40; pass++) { let ch = 0; for (let c = 0; c < nx * nz; c++) { if (!fill[c] || known[c]) continue; const x = c % nx, z = (c / nx) | 0; let sm = 0, k = 0;
+            for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const a = x + dx, b = z + dz; if (a < 0 || b < 0 || a >= nx || b >= nz) continue; const q = a + b * nx; if (known[q]) { sm += top[q]; k++; } }
+            if (k) { top[c] = sm / k; known[c] = 2; ch++; } } for (let c = 0; c < nx * nz; c++) if (known[c] === 2) known[c] = 1; if (!ch) break; } }
+      let n = 0; for (let c = 0; c < nx * nz; c++) { if (!fill[c]) continue; n++; const ix = c % nx, iz = (c / nx) | 0; const ft = top[c]; slabs.push(c, ft);
+        for (let iy = Math.max(0, Math.floor((ft - 1.6 - y0) / v)); iy <= Math.min(ny - 1, Math.ceil((ft + 0.6 - y0) / v)); iy++) { const Y = y0 + iy * v, sd = Math.max(ft - 1 - Y, Y - ft), i = ix + iy * nx + iz * sxy; if (sd < D[i]) D[i] = sd; near[i] = Math.max(near[i], 2); } }
       if (n) holes++; } }
   // 2. walkable slots: a low opening at floor level through a thin wall (lower than 7 ft, wall continuing above) is raised to 7 ft
   const slotCuts = []; { const DOOR = 7, maxSt = Math.ceil((y1 - Math.max(0, y0)) / H);
