@@ -4944,7 +4944,7 @@ function fuseCluster(pieces, zOf, ev, opts) {
             const ii = ix + iy * nx + iz * sxy, fill = db + (1 - w) * 0.6; if (fill < D[ii]) { const h = Math.max(1.2 - Math.abs(fill - D[ii]), 0) / 1.2; D[ii] = Math.min(fill, D[ii]) - h * h * 0.3; } near[ii] = Math.max(near[ii], 2); } } } } }
   // 1b. floor holes: on each level, the slab under every piece that stands there is checked; gaps between pieces and holes
   // are patched (all of them on the ground floor; on upper floors only holes up to holesMax sq ft, so real voids stay open)
-  let holes = 0; const slabs = [], bridgeDbg = []; { const levels = [...new Set(items.filter((q) => !q.openBottom).map((q) => q.pc.base))];
+  let holes = 0; const slabs = []; { const levels = [...new Set(items.filter((q) => !q.openBottom).map((q) => q.pc.base))];
     for (const g of levels) { const yf = g * H, region = new Uint8Array(nx * nz), solid = new Uint8Array(nx * nz);
       for (const q of items) { if (q.pc.base !== g || q.openBottom) continue; const S = q.S / 2 + 1.5;
         for (let iz = Math.max(0, Math.floor((q.pc.z - S - z0) / v)); iz <= Math.min(nz - 1, Math.ceil((q.pc.z + S - z0) / v)); iz++) for (let ix = Math.max(0, Math.floor((q.pc.x - S - x0) / v)); ix <= Math.min(nx - 1, Math.ceil((q.pc.x + S - x0) / v)); ix++) region[ix + iz * nx] = 1; }
@@ -4960,14 +4960,13 @@ function fuseCluster(pieces, zOf, ev, opts) {
       // seams: models rarely reach the very edge of their tile, so two touching pieces leave a slot between their floors.
       // Along every shared edge, each row is bridged from one floor to the other (up to 10 ft); rows with no floor on a side stay open
       const onLvl = items.filter((q) => q.pc.base === g && !q.openBottom), cellAt = (X, Z) => { const ix = Math.round((X - x0) / v), iz = Math.round((Z - z0) / v); return ix < 0 || iz < 0 || ix >= nx || iz >= nz ? -1 : ix + iz * nx; };
-      const bst = [0, 0, 0, 0]; bridgeDbg.push({ g, bst, n: onLvl.length });
       for (const A of onLvl) for (const B of onLvl) { if (A === B) continue;
         for (const ws of [0, 1]) { const ea = edgeOf(A.pc, ws), eb = edgeOf(B.pc, ws + 2); if (Math.abs(ea.c - eb.c) > 2.5) continue; const o0 = Math.max(ea.a, eb.a), o1 = Math.min(ea.b, eb.b); if (o1 - o0 < 1) continue;
           const c = (ea.c + eb.c) / 2, along = ws === 0, pt = (n, u) => along ? cellAt(n, u) : cellAt(u, n);
           for (let u = o0 + v / 2; u <= o1 - v / 2; u += v) { let dA = -1, dB = -1;
             for (let t = 0; t <= 8; t += v) { const q = pt(c - t, u); if (q >= 0 && solid[q]) { dA = t; break; } }
             for (let t = 0; t <= 8; t += v) { const q = pt(c + t, u); if (q >= 0 && solid[q]) { dB = t; break; } }
-            bst[dA < 0 ? 0 : dB < 0 ? 1 : dA + dB > 10 ? 2 : 3]++; if (dA < 0 || dB < 0 || dA + dB > 10) continue;
+            if (dA < 0 || dB < 0 || dA + dB > 10) continue;
             const ta = top[pt(c - dA, u)], tb2 = top[pt(c + dB, u)]; for (let t = -dA; t <= dB; t += v / 2) { const q = pt(c + t, u); if (q >= 0 && !solid[q]) { fill[q] = 1; top[q] = ta + (tb2 - ta) * (t + dA) / Math.max(v, dA + dB); } } } } }
       // enclosed holes (not reachable from the outside of the region)
       const seen = new Uint8Array(nx * nz);
@@ -4979,7 +4978,10 @@ function fuseCluster(pieces, zOf, ev, opts) {
         for (let pass = 0; pass < 40; pass++) { let ch = 0; for (let c = 0; c < nx * nz; c++) { if (!fill[c] || known[c]) continue; const x = c % nx, z = (c / nx) | 0; let sm = 0, k = 0;
             for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const a = x + dx, b = z + dz; if (a < 0 || b < 0 || a >= nx || b >= nz) continue; const q = a + b * nx; if (known[q]) { sm += top[q]; k++; } }
             if (k) { top[c] = sm / k; known[c] = 2; ch++; } } for (let c = 0; c < nx * nz; c++) if (known[c] === 2) known[c] = 1; if (!ch) break; } }
-      let n = 0; for (let c = 0; c < nx * nz; c++) { if (!fill[c]) continue; n++; const ix = c % nx, iz = (c / nx) | 0; const ft = top[c]; slabs.push(c, ft);
+      // existing floor within a few feet of a seam is also kept through the smoothing below
+      { const sr = Math.ceil(4 / v); for (const q of onLvl) { const S = q.S / 2; for (const [ex, ez, w, h] of [[q.pc.x + S, q.pc.z, 0, S], [q.pc.x - S, q.pc.z, 0, S], [q.pc.x, q.pc.z + S, S, 0], [q.pc.x, q.pc.z - S, S, 0]]) {
+          for (let Z = ez - h - 4; Z <= ez + h + 4; Z += v) for (let X = ex - w - 4; X <= ex + w + 4; X += v) { if (Math.abs(X - ex) > w + 4 || Math.abs(Z - ez) > h + 4) continue; const c = cellAt(X, Z); if (c >= 0 && solid[c] && top[c] < yf + 0.01 && !fill[c]) { fill[c] = 2; } } } } }
+      let n = 0; for (let c = 0; c < nx * nz; c++) { if (!fill[c]) continue; if (fill[c] === 2) { slabs.push(c, top[c]); continue; } n++; const ix = c % nx, iz = (c / nx) | 0; const ft = top[c]; slabs.push(c, ft);
         for (let iy = Math.max(0, Math.floor((ft - 1.6 - y0) / v)); iy <= Math.min(ny - 1, Math.ceil((ft + 0.6 - y0) / v)); iy++) { const Y = y0 + iy * v, sd = Math.max(ft - 1 - Y, Y - ft), i = ix + iy * nx + iz * sxy; if (sd < D[i]) D[i] = sd; near[i] = Math.max(near[i], 2); } }
       if (n) holes++; } }
   // 2. walkable slots: a low opening at floor level through a thin wall (lower than 7 ft, wall continuing above) is raised to 7 ft
@@ -5037,7 +5039,7 @@ function fuseCluster(pieces, zOf, ev, opts) {
     for (let iz = iz0; iz <= iz1; iz++) for (let iy = iy0; iy <= iy1; iy++) for (let ix = ix0; ix <= ix1; ix++) {
       const qx = Math.abs(x0 + ix * v - cx) - hx, qy = Math.abs(y0 + iy * v - cy) - hy, qz = Math.abs(z0 + iz * v - cz) - hz;
       const box = Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0) - r, i = ix + iy * nx + iz * sxy; if (-box > D[i]) D[i] = -box; } }
-  return { D, nx, ny, nz, v, x0, y0, z0, voxel: v, cuts: cuts.length, slots: slotCuts.length, holes, dims: [nx, ny, nz], mesh: null, items, bridgeDbg, nslabs: slabs.length / 2 };
+  return { D, nx, ny, nz, v, x0, y0, z0, voxel: v, cuts: cuts.length, slots: slotCuts.length, holes, dims: [nx, ny, nz], mesh: null, items };
 }
 // brush edits on top of a fused form: smooth (soften lumps), cut (remove), fill (add); each a sphere of radius r ft at p
 function fuseApplyOps(base, ops) {
