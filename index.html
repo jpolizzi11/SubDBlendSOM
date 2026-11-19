@@ -5515,6 +5515,9 @@ function circulation(grid, pieces, ev, H) {
   const at = (X, Y, Z) => { const ix = Math.round((X - x0) / v), iy = Math.round((Y - y0) / v), iz = Math.round((Z - z0) / v); return ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz ? 1e3 : D[ix + iy * nx + iz * sxy]; };
   let maxL = 0; for (const pc of pieces) maxL = Math.max(maxL, pc.base + (pc.storeys || 1));
   const N2 = nx * nz, N8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  // networks: every walkable surface is a node; doorways and ramps between levels join nodes. Only networks that link pieces are drawn.
+  const par = new Map(), node = new Map(), find = (a) => { while (par.get(a) !== a) { par.set(a, par.get(par.get(a))); a = par.get(a); } return a; }, unite = (a, b) => { a = find(a); b = find(b); if (a !== b) par.set(a, b); };
+  const allP = [], allS = []; let prevLab = null, prevHf = null, prevG = -1;
   for (let g = 0; g < maxL; g++) { const yf = g * H, walk = new Uint8Array(N2), hf = new Float32Array(N2);
     for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) { const X = x0 + ix * v, Z = z0 + iz * v;
       let ys = null; for (let y = yf + 1.6; y >= yf - 1.2; y -= v * 0.5) if (at(X, y, Z) < 0) { ys = y; break; } if (ys == null) continue;
@@ -5531,10 +5534,11 @@ function circulation(grid, pieces, ev, H) {
       comps.push(cells); }
     const here = pieces.filter((pc) => pc.base <= g && g < pc.base + (pc.storeys || 1)), drawn = new Map(), levelPaths = [];
     for (let sid = 0; sid < comps.length; sid++) { const cells = comps[sid]; if (cells.length * v * v < 40) continue;
-      const touched = new Set(); for (const c of cells) { const X = x0 + (c % nx) * v, Z = z0 + ((c / nx) | 0) * v; here.forEach((pc, k) => { const S = pSize(pc) / 2; if (Math.abs(X - pc.x) < S && Math.abs(Z - pc.z) < S) touched.add(k); }); }
-      if (touched.size < 1 || (touched.size < 2 && g > 0)) continue; // upper levels: only surfaces that carry you between pieces; the ground floor: every walkable area
+      const cnt = new Map(); for (const c of cells) { const X = x0 + (c % nx) * v, Z = z0 + ((c / nx) | 0) * v; pieces.forEach((pc, k) => { if (!(pc.base <= g && g < pc.base + (pc.storeys || 1))) return; const S = pSize(pc) / 2; if (Math.abs(X - pc.x) < S && Math.abs(Z - pc.z) < S) cnt.set(k, (cnt.get(k) || 0) + 1); }); }
+      const touched = new Set([...cnt].filter(([, n]) => n * v * v >= 25).map(([k]) => k)); if (!touched.size) continue; // a piece counts once a real patch of floor (25 sq ft) lies in it
+      const nid = g * 1e6 + sid; par.set(nid, nid); node.set(nid, { pieces: touched, ground: g === 0, door: false });
       drawn.set(sid, []);
-      out.surfaces.push({ cells: cells.map((c) => [x0 + (c % nx) * v, hf[c], z0 + ((c / nx) | 0) * v]), v });
+      allS.push({ nid, s: { cells: cells.map((c) => [x0 + (c % nx) * v, hf[c], z0 + ((c / nx) | 0) * v]), v } });
       // centreline: thin the surface to a one-cell skeleton (Zhang-Suen)
       let minx = nx, maxx = 0, minz = nz, maxz = 0; for (const c of cells) { const x = c % nx, z = (c / nx) | 0; minx = Math.min(minx, x); maxx = Math.max(maxx, x); minz = Math.min(minz, z); maxz = Math.max(maxz, z); }
       const w = maxx - minx + 3, h = maxz - minz + 3, M = new Uint8Array(w * h); for (const c of cells) M[(c % nx) - minx + 1 + (((c / nx) | 0) - minz + 1) * w] = 1;
@@ -5572,7 +5576,7 @@ function circulation(grid, pieces, ev, H) {
         let pts = line.map((i) => { const x = (i % w) - 1 + minx, z = ((i / w) | 0) - 1 + minz; return [x0 + x * v, hf[x + z * nx] + 0.35, z0 + z * v]; });
         const step = Math.max(1, Math.round(1.5 / v)); pts = pts.filter((_, k) => k % step === 0 || k === pts.length - 1);
         for (let it = 0; it < 3 && pts.length > 2; it++) { const q = [pts[0]]; for (let k = 0; k < pts.length - 1; k++) { const p0 = pts[k], p1 = pts[k + 1]; q.push(p0.map((u, j) => u * 0.75 + p1[j] * 0.25), p0.map((u, j) => u * 0.25 + p1[j] * 0.75)); } q.push(pts[pts.length - 1]); pts = q; }
-        if (pts.length >= 2) { out.paths.push(pts); drawn.get(sid).push(pts); }
+        if (pts.length >= 2) { allP.push({ nid, pts }); drawn.get(sid).push(pts); }
       }
     }
     // doorways: where a door joins two walkable areas, their lines are joined through it, so the route stays continuous
@@ -5586,8 +5590,16 @@ function circulation(grid, pieces, ev, H) {
       const sa = lab[ca], sb = lab[cb]; if (sa === sb) continue; const key = Math.min(sa, sb) + '|' + Math.max(sa, sb) + '|' + Math.round(X) + '|' + Math.round(Z); if (joined.has(key)) continue; joined.add(key);
       const pa = [x0 + (ca % nx) * v, hf[ca] + 0.35, z0 + ((ca / nx) | 0) * v], pb = [x0 + (cb % nx) * v, hf[cb] + 0.35, z0 + ((cb / nx) | 0) * v], mid = [X, (pa[1] + pb[1]) / 2, Z];
       const qa = nearest(sa, pa), qb = nearest(sb, pb); const line = [qa, pa, mid, pb, qb].filter(Boolean);
-      if (line.length >= 2) out.paths.push(line); }
+      if (line.length >= 2) { const na = g * 1e6 + sa, nb2 = g * 1e6 + sb; unite(na, nb2); node.get(na).door = node.get(nb2).door = true; allP.push({ nid: na, pts: line }); } }
+    // ramps and stairs: the same floor seen from two levels joins them
+    if (prevLab && prevG === g - 1) for (let c = 0; c < N2; c++) { const a = lab[c], b = prevLab[c]; if (a < 0 || b < 0) continue; const na = g * 1e6 + a, nb2 = prevG * 1e6 + b; if (node.has(na) && node.has(nb2) && Math.abs(hf[c] - prevHf[c]) < 1.1) unite(na, nb2); }
+    prevLab = lab; prevHf = hf; prevG = g;
   }
+  // keep a network only when it links two or more pieces and you can get onto it (from the ground or through a doorway)
+  const net = new Map(); for (const [id, n] of node) { const r = find(id); if (!net.has(r)) net.set(r, { pieces: new Set(), ground: false, door: false }); const t = net.get(r); n.pieces.forEach((k) => t.pieces.add(k)); t.ground = t.ground || n.ground; t.door = t.door || n.door; }
+  const keep = (id) => { const t = net.get(find(id)); return t.pieces.size >= 2 && (t.ground || t.door); };
+  for (const p of allP) if (keep(p.nid)) out.paths.push(p.pts);
+  for (const q of allS) if (keep(q.nid)) out.surfaces.push(q.s);
   return out;
 }
 // draw: walkable traversal surfaces tinted green on the floor, continuous red centrelines over the massing
