@@ -3994,7 +3994,7 @@ async function startRefine() {
 function refAfterItems() {
   if (REF.sel && !refItem(REF.sel)) REF.sel = null;
   for (const id of [...REF.cache.keys()]) if (!refItem(id)) REF.cache.delete(id);
-  renderRefList(); renderTypoTabs(); if (tilingOn || fuseOn || asmOn) { if (TL.prepJob) TL.prepJob.then(() => prepAll()); else prepAll(); } if (refineOn) { if (!REF.sel && REF.items.length) refSelect(REF.items[REF.items.length - 1].id); else renderRefControls(); }
+  renderRefList(); renderTypoTabs(); try { if (tilingOn || fuseOn || asmOn) { if (TL.prepJob) TL.prepJob.then(() => prepAll()); else prepAll(); } } catch { /* still starting up */ } if (refineOn) { if (!REF.sel && REF.items.length) refSelect(REF.items[REF.items.length - 1].id); else renderRefControls(); }
 }
 const refSaveLocal = () => store.set('refine', REF.items);
 async function refPut(it) {
