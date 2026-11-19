@@ -1735,7 +1735,7 @@ let toastT; function toast(t) { const el = $('toast'); el.textContent = t; el.hi
 /* ---------------- three: viewer + thumbnail renderer ---------------- */
 const viewerCanvas = $('viewer');
 const vr = new THREE.WebGLRenderer({ canvas: viewerCanvas, antialias: true });
-vr.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+vr.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
 const vscene = new THREE.Scene();
 const vcam = new THREE.PerspectiveCamera(32, 1, 0.05, 50);
 vcam.position.set(3.1, 2.4, 3.4);
@@ -1770,7 +1770,12 @@ function sizeViewer() {
 }
 function viewerBg() { vscene.background = new THREE.Color(css('--viewer') || '#0a0c0f'); }
 viewerBg();
-(function loop() { controls.update(); vr.render(vscene, vcam); requestAnimationFrame(loop); })();
+// draw a 3D view only when something moves: while orbiting (and its easing), and otherwise a few times a second to pick up edits.
+// An idle view then costs almost nothing, instead of redrawing 60 times a second.
+function lazyLoop(active, ctl, rr, scene, cam) { let dirty = true, last = 0; ctl.addEventListener('change', () => { dirty = true; });
+  rr.domElement.addEventListener('pointerdown', () => { dirty = true; }); rr.domElement.addEventListener('wheel', () => { dirty = true; }, { passive: true });
+  requestAnimationFrame(function loop(now) { if (active()) { const moved = ctl.update(); if (dirty || moved || now - last > 300) { rr.render(scene, cam); last = now; dirty = false; } } requestAnimationFrame(loop); }); }
+lazyLoop(() => !refineOn && !tilingOn && !fuseOn && !asmOn, controls, vr, vscene, vcam);
 new ResizeObserver(sizeViewer).observe(viewerCanvas);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { viewerBg(); drawMap(); });
 viewerCanvas.addEventListener('dblclick', () => { if (vmesh) frameMesh(vmesh.geometry, false); });
@@ -3565,7 +3570,7 @@ const refItem = (id) => REF.items.find((x) => x.id === id);
 // renderer for the Refine viewer
 const refCanvas = $('refViewer');
 const rr = new THREE.WebGLRenderer({ canvas: refCanvas, antialias: true });
-rr.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+rr.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
 const rscene = new THREE.Scene(); addLights(rscene);
 const rcam = new THREE.PerspectiveCamera(32, 1, 0.05, 50); rcam.position.set(3.1, 2.4, 3.4);
 const rcontrols = new OrbitControls(rcam, refCanvas); rcontrols.zoomSpeed = 3;
@@ -3575,7 +3580,7 @@ function refBg() { rscene.background = new THREE.Color(css('--viewer') || '#0a0c
 refBg(); matchMedia('(prefers-color-scheme: dark)').addEventListener('change', refBg);
 function sizeRef() { const w = refCanvas.clientWidth; if (!w) return; rr.setSize(w, w, false); rcam.aspect = 1; rcam.updateProjectionMatrix(); }
 new ResizeObserver(sizeRef).observe(refCanvas);
-(function rloop() { if (refineOn) { rcontrols.update(); rr.render(rscene, rcam); } requestAnimationFrame(rloop); })();
+lazyLoop(() => refineOn, rcontrols, rr, rscene, rcam);
 function frameRef(g, keepDir) {
   g.computeBoundingSphere(); const { center, radius } = g.boundingSphere;
   let dir = rcam.position.clone().sub(rcontrols.target);
@@ -4919,7 +4924,7 @@ function fuseCluster(pieces, zOf, ev, opts) {
   const pad = k + 2; let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const q of items) { x0 = Math.min(x0, q.pc.x - q.S / 2); x1 = Math.max(x1, q.pc.x + q.S / 2); z0 = Math.min(z0, q.pc.z - q.S / 2); z1 = Math.max(z1, q.pc.z + q.S / 2); y0 = Math.min(y0, q.bot); y1 = Math.max(y1, q.top); }
   x0 -= pad; x1 += pad; z0 -= pad; z1 += pad; y0 -= 1; y1 += pad;
-  let v = opts.voxel || 0.5; const vol = (x1 - x0) * (y1 - y0) * (z1 - z0); if (vol / v ** 3 > 14e6) v = Math.cbrt(vol / 14e6);
+  let v = opts.voxel || 0.5; const vol = (x1 - x0) * (y1 - y0) * (z1 - z0); if (vol / v ** 3 > 8e6) v = Math.cbrt(vol / 8e6); // cap the grid so a big fuse stays within a laptop's memory
   const nx = Math.ceil((x1 - x0) / v) + 1, ny = Math.ceil((y1 - y0) / v) + 1, nz = Math.ceil((z1 - z0) / v) + 1, sxy = nx * ny;
   const D = new Float32Array(nx * ny * nz).fill(1e3);
   const smin = (a, b) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k / 4; };
@@ -5073,7 +5078,7 @@ const curCluster = () => TL.clusters.find((c) => c.id === TL.cur) || null;
 
 /* --- 3D viewer --- */
 const tCanvas = $('tileViewer');
-const trr = new THREE.WebGLRenderer({ canvas: tCanvas, antialias: true }); trr.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+const trr = new THREE.WebGLRenderer({ canvas: tCanvas, antialias: true }); trr.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
 const tscene3 = new THREE.Scene(); addLights(tscene3);
 const tcam3 = new THREE.PerspectiveCamera(35, 1.6, 1, 5000); tcam3.position.set(160, 140, 200);
 const tctl = new OrbitControls(tcam3, tCanvas); tctl.enableDamping = true; tctl.dampingFactor = 0.12; tctl.screenSpacePanning = true; tctl.zoomToCursor = true; tctl.zoomSpeed = 3;
@@ -5082,7 +5087,7 @@ function tileBg() { tscene3.background = new THREE.Color(css('--viewer') || '#0a
 tileBg(); matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { tileBg(); drawPlan(); });
 function sizeTile3() { const w = tCanvas.clientWidth; if (!w) return; const h = Math.round(w * 0.62); trr.setSize(w, h, false); tcam3.aspect = w / h; tcam3.updateProjectionMatrix(); }
 new ResizeObserver(sizeTile3).observe(tCanvas);
-(function tloop() { if (tilingOn) { tctl.update(); trr.render(tscene3, tcam3); } requestAnimationFrame(tloop); })();
+lazyLoop(() => tilingOn, tctl, trr, tscene3, tcam3);
 let tFramed = false;
 function frameTiles() {
   const box = new THREE.Box3().setFromObject(tgroup); if (box.isEmpty()) return;
@@ -5684,14 +5689,14 @@ var FZ = { cur: store.get('fzSel', null), tool: 'orbit', base: null, baseSig: ''
 const FZ_DEF = { blend: 4, smooth: 6, clear: 2, holes: 80, open: 'blocked' };
 function fuseSent() { return TL.clusters.filter((c) => c.fz && c.fz.sent).sort((a, b) => a.fz.sent - b.fz.sent); }
 const fzCluster = () => TL.clusters.find((c) => c.id === FZ.cur && c.fz) || null;
-const fzCanvas = $('fzViewer'), fzr = new THREE.WebGLRenderer({ canvas: fzCanvas, antialias: true }); fzr.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+const fzCanvas = $('fzViewer'), fzr = new THREE.WebGLRenderer({ canvas: fzCanvas, antialias: true }); fzr.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
 const fzScene = new THREE.Scene(); addLights(fzScene); const fzCam = new THREE.PerspectiveCamera(35, 1.6, 1, 5000); fzCam.position.set(160, 140, 200);
 const fzCtl = new OrbitControls(fzCam, fzCanvas); fzCtl.enableDamping = true; fzCtl.dampingFactor = 0.12; fzCtl.screenSpacePanning = true; fzCtl.zoomToCursor = true; fzCtl.zoomSpeed = 3;
 const fzGroup = new THREE.Group(); fzScene.add(fzGroup); fzr.localClippingEnabled = true; const fzSecSt = sectionUI($('fzSec'), () => applySection(fzGroup, fzSecSt)); fzScene.background = new THREE.Color(css('--viewer') || '#0a0c0f');
 const fzCursor = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), new THREE.MeshBasicMaterial({ color: 0xe2589a, transparent: true, opacity: 0.35, depthWrite: false })); fzCursor.visible = false; fzScene.add(fzCursor);
 function sizeFz() { const w = fzCanvas.clientWidth; if (!w) return; const h = Math.round(w * 0.66); fzr.setSize(w, h, false); fzCam.aspect = w / h; fzCam.updateProjectionMatrix(); }
 new ResizeObserver(sizeFz).observe(fzCanvas);
-(function fzloop() { if (fuseOn) { fzCtl.update(); fzr.render(fzScene, fzCam); } requestAnimationFrame(fzloop); })();
+lazyLoop(() => fuseOn, fzCtl, fzr, fzScene, fzCam);
 function fzFrame() { const box = new THREE.Box3().setFromObject(fzGroup); if (box.isEmpty()) return; const c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length() / 2;
   const dir = new THREE.Vector3(0.55, 0.5, 0.67).normalize(), dist = r / Math.sin(THREE.MathUtils.degToRad(fzCam.fov / 2)) * 0.95;
   fzCtl.target.copy(c); fzCam.position.copy(c).addScaledVector(dir, dist); fzCam.near = dist / 100; fzCam.far = dist * 20; fzCam.updateProjectionMatrix(); fzCtl.update(); FZ.framed = true; }
@@ -6014,14 +6019,14 @@ function asmNudge(a, tb) {
 }
 
 /* --- 3D: pieces coloured by origin, or the whole assembly fused (still coloured by origin) --- */
-const asmCanvas = $('asmViewer'), asmr = new THREE.WebGLRenderer({ canvas: asmCanvas, antialias: true }); asmr.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); asmr.localClippingEnabled = true;
+const asmCanvas = $('asmViewer'), asmr = new THREE.WebGLRenderer({ canvas: asmCanvas, antialias: true }); asmr.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1)); asmr.localClippingEnabled = true;
 const asmScene = new THREE.Scene(); addLights(asmScene); asmScene.background = new THREE.Color(css('--viewer') || '#0a0c0f');
 const asmCam = new THREE.PerspectiveCamera(35, 1.6, 1, 8000); asmCam.position.set(200, 180, 260);
 const asmCtl = new OrbitControls(asmCam, asmCanvas); asmCtl.enableDamping = true; asmCtl.dampingFactor = 0.12; asmCtl.screenSpacePanning = true; asmCtl.zoomToCursor = true; asmCtl.zoomSpeed = 3;
 const asmGroup = new THREE.Group(); asmScene.add(asmGroup); const asmSecSt = sectionUI($('asmSec'), () => applySection(asmGroup, asmSecSt));
 function sizeAsm3() { const w = asmCanvas.clientWidth; if (!w) return; const h = Math.round(w * 0.6); asmr.setSize(w, h, false); asmCam.aspect = w / h; asmCam.updateProjectionMatrix(); }
 new ResizeObserver(sizeAsm3).observe(asmCanvas);
-(function asmloop() { if (asmOn) { asmCtl.update(); asmr.render(asmScene, asmCam); } requestAnimationFrame(asmloop); })();
+lazyLoop(() => asmOn, asmCtl, asmr, asmScene, asmCam);
 function asmFrame() { const box = new THREE.Box3().setFromObject(asmGroup); if (box.isEmpty()) return; const c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length() / 2;
   const dir = new THREE.Vector3(0.55, 0.55, 0.63).normalize(), dist = r / Math.sin(THREE.MathUtils.degToRad(asmCam.fov / 2)) * 0.95; asmCtl.target.copy(c); asmCam.position.copy(c).addScaledVector(dir, dist); asmCam.near = dist / 100; asmCam.far = dist * 20; asmCam.updateProjectionMatrix(); asmCtl.update(); AS.framed = true; }
 asmCanvas.addEventListener('dblclick', asmFrame);
