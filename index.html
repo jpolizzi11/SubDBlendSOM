@@ -5128,10 +5128,10 @@ function prepAll() {
   TL.prepJob = (async () => {
     try {
       const need = REF.items.filter((it) => { const p = TL.pre.get(it.id); return !(p && p.sig === tileSig(it) && p.r === (TL.set.detail || 64)); });
-      for (let k = 0; k < need.length; k++) { if (!tilingOn) break; $('tileProg').textContent = `Reading tiles ${k + 1}/${need.length}: ${need[k].name}…`;
+      for (let k = 0; k < need.length; k++) { if (!tilingOn && !fuseOn && !asmOn) break; $('tileProg').textContent = `Reading tiles ${k + 1}/${need.length}: ${need[k].name}…`;
         try { await tilePrep(need[k]); } catch (e) { console.warn('tile prep', e); }
         if (k % 3 === 2 || k === need.length - 1) { renderLibrary(); renderAll(); } }
-    } finally { TL.prepJob = null; $('tileProg').textContent = ''; renderLibrary(); renderAll(); }
+    } finally { TL.prepJob = null; $('tileProg').textContent = ''; renderLibrary(); renderAll(); if (asmOn && !AS.draw) asmRenderAll(); if (fuseOn) fzRefresh(); }
   })();
   return TL.prepJob;
 }
