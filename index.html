@@ -5623,6 +5623,20 @@ function circulation(grid, pieces, ev, H) {
       const qa = nearest(sa, pa), qb = nearest(sb, pb); const line = [qa, pa, mid, pb, qb].filter(Boolean);
       if (line.length >= 2) out.paths.push(line); }
   }
+  // close gaps: a loose end of one path is joined to the nearest separate path when there is a clear, walkable line between them
+  { const P = out.paths, par = P.map((_, i) => i), find = (a) => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; }, unite = (a, b) => { par[find(a)] = find(b); };
+    const d2 = (a, b) => (a[0] - b[0]) ** 2 + (a[2] - b[2]) ** 2;
+    for (let i = 0; i < P.length; i++) for (const e of [P[i][0], P[i][P[i].length - 1]]) for (let j = 0; j < P.length; j++) { if (i === j || find(i) === find(j)) continue; if (P[j].some((q) => d2(q, e) < 1.5 && Math.abs(q[1] - e[1]) < 1.5)) unite(i, j); }
+    const clear = (a, b) => { const L = Math.sqrt(d2(a, b)); let floor = 0, n = 0;
+      for (let t = 0; t <= L; t += 0.5) { const f = L ? t / L : 0, X = a[0] + (b[0] - a[0]) * f, Z = a[2] + (b[2] - a[2]) * f, y = a[1] + (b[1] - a[1]) * f - 0.35; n++;
+        for (let yy = y + 0.9; yy <= y + 6; yy += Math.min(0.8, v)) if (at(X, yy, Z) < 0) return false; // something in the way
+        for (let yy = y + 0.4; yy >= y - 1.5; yy -= v / 2) if (at(X, yy, Z) < 0) { floor++; break; } }
+      return floor >= 0.8 * n; };
+    const cand = [];
+    for (let i = 0; i < P.length; i++) for (const e of [P[i][0], P[i][P[i].length - 1]]) for (let j = 0; j < P.length; j++) { if (i === j) continue; let best = null, bd = 14 * 14;
+      for (const q of P[j]) { if (Math.abs(q[1] - e[1]) > 2) continue; const d = d2(q, e); if (d < bd) { bd = d; best = q; } } if (best && bd > 1.5) cand.push({ i, j, e, q: best, d: bd }); }
+    cand.sort((a, b) => a.d - b.d);
+    for (const c of cand) { if (find(c.i) === find(c.j) || !clear(c.e, c.q)) continue; P.push([c.e, c.q]); par.push(P.length - 1); unite(c.i, c.j); unite(P.length - 1, c.i); out.joins = (out.joins || 0) + 1; } }
   return out;
 }
 // draw: walkable traversal surfaces tinted green on the floor, continuous red centrelines over the massing
