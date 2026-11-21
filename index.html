@@ -172,6 +172,7 @@ body.fuse-mode main.app:not(#fuseApp),body.fuse-mode #runBtn,body.fuse-mode #ban
 .clprog{margin-top:12px}.clhead{display:flex;align-items:center;gap:8px;margin-bottom:6px}.clhead .btn{margin-left:auto}.clhead .dot{width:10px;height:10px;border-radius:50%}
 .clitem{display:block;width:100%;text-align:left;border:1px solid transparent;background:transparent;border-radius:6px;padding:5px 10px;cursor:pointer;font-weight:600;color:var(--ink)}.clitem:hover{background:var(--sunk)}.clitem.on{border-color:var(--accent);background:var(--sunk)}.clitem small{color:var(--muted);font-weight:500;margin-left:6px}
 .fullsite{margin-left:auto;align-self:center;font-size:12px;color:var(--muted);text-decoration:none;padding:6px 10px;border-radius:6px}.fullsite:hover{color:var(--ink);background:var(--sunk)}body.build #typoTabs,body.build #tToFuse{display:none}
+.typolist{display:flex;flex-direction:column;gap:6px}.typoitem{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:8px;cursor:pointer}.typoitem:has(input:checked){border-color:var(--accent);background:var(--sunk)}.typoitem input{margin-top:3px}.typoitem span{display:flex;flex-direction:column;gap:2px;min-width:0}.typoitem small{color:var(--muted);font-size:11.5px;line-height:1.35}
 .clrow{display:flex;align-items:center;gap:2px}.clrow .clitem{flex:1;min-width:0}.clren{border:0;background:transparent;color:var(--muted);cursor:pointer;border-radius:6px;padding:4px 8px;font-size:14px;opacity:.55}.clren:hover,.clren:focus-visible{opacity:1;background:var(--sunk);color:var(--ink)}.clrename{font:inherit;font-weight:600;width:100%;box-sizing:border-box;border:1px solid var(--accent);border-radius:6px;padding:5px 10px;background:var(--sunk);color:var(--ink);margin:1px 0}
 .clname{font:inherit;font-size:15px;font-weight:700;border:1px dashed var(--line);background:transparent;color:var(--ink);border-radius:6px;padding:4px 6px;min-width:0;flex:1}.clname:hover,.clname:focus{border-color:var(--line)}
 #tilePlan{touch-action:none}
@@ -490,6 +491,9 @@ details.sub > .settings { padding-bottom: 6px; }
       <h2>New cluster layout</h2>
       <div class="pad settings">
           <label for="tRLayout">Layout<small>Free grows piece by piece. A grid is the starting layout; pieces then shift to line up doors. ×1 = one flat level. ×2/×3 add upper tiers.</small></label><span class="layoutctl"><select id="tRLayout"><option value="free">Free</option><option value="1x3">1 × 3</option><option value="1x4">1 × 4</option><option value="2x2">2 × 2</option><option value="2x3">2 × 3</option><option value="2x4">2 × 4</option><option value="2x6">2 × 6</option><option value="2x8">2 × 8</option><option value="3x3">3 × 3</option><option value="3x4">3 × 4</option><option value="4x4">4 × 4</option><option value="custom">Custom…</option></select><select id="tRTiers" aria-label="Tiers" title="Tiers: layers stacked on the grid"><option value="1">× 1 tier</option><option value="2">× 2 tiers</option><option value="3">× 3 tiers</option></select><select id="tRUpper" aria-label="Upper tier fill" title="How many pieces go on the upper tiers"><option value="sparse">Upper: 1–3 pieces</option><option value="some">Upper: some</option><option value="full">Upper: wherever possible</option></select><span id="tRCustom" hidden><input type="number" id="tRRows" min="1" max="8" style="width:46px" aria-label="Rows"> × <input type="number" id="tRCols" min="1" max="10" style="width:46px" aria-label="Columns"></span></span>
+          <label>Typology assist<small>Tick the typologies a grid layout may follow. Each generation picks one of the ticked ones.</small></label>
+          <div id="tTypoList" class="typolist"></div>
+          <label for="tTypoUse">Use it on<small>Typologies shape grid layouts (2 × 3, 3 × 4 …), not Free.</small></label><select id="tTypoUse"><option value="some">Some generations</option><option value="all">Every generation</option></select>
           <details class="sub"><summary>More rules</summary><div class="settings">
           <label for="tRPieces">Pieces<small>How many tiles in a new cluster (free layout).</small></label><select id="tRPieces"><option value="0">Program default</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option><option value="13">13</option><option value="14">14</option></select>
           <label for="tROff">Offset freedom<small>0% = pieces line up edge to edge or centred. 100% = they slide freely along each other.</small></label>
@@ -4723,10 +4727,10 @@ function loosenFormation(pieces, tb, prog, ru, fitOf, rand, iters, onlyTier) {
 }
 // one more layer on top of tier k-1. Cores first: over a tall void, an open-bottomed piece makes one double-height space whose stair
 // reaches the new level. Then the other slots, nearest a core first, each needing a door-to-door route to a core or a taller neighbour.
-function fillTier(pieces, k, order, tiles, tb, prog, ru, rand, fitOf, target) {
+function fillTier(pieces, k, order, tiles, tb, prog, ru, rand, fitOf, target, allow) {
   const rots = ru.rotate === false ? [0] : [0, 1, 2, 3], sr = Math.max(0.3, ru.stack ?? prog.stack);
   const lowerOf = (slot) => pieces.find((q) => (q.tier || 0) === k - 1 && q.slot === slot), taken = (slot) => pieces.some((q) => (q.tier || 0) === k && q.slot === slot);
-  const slots = order.map(([r, c]) => ({ r, c, slot: r + ',' + c })).filter((o) => lowerOf(o.slot));
+  const slots = order.map(([r, c]) => ({ r, c, slot: r + ',' + c })).filter((o) => lowerOf(o.slot) && (!allow || allow(o)));
   const isCore = (o) => { const b = lowerOf(o.slot), t = b && tb(b.t); return !!(t && t.tallVoid && t.vo); };
   const cores = slots.filter(isCore), dist = (o) => Math.min(99, ...pieces.filter((q) => (q.tier || 0) === k && q.base > 0).map((q) => { const [r, c] = q.slot.split(',').map(Number); return Math.abs(r - o.r) + Math.abs(c - o.c); }));
   const place = (o, mode) => {
@@ -4747,6 +4751,9 @@ function fillTier(pieces, k, order, tiles, tb, prog, ru, rand, fitOf, target) {
     }
     if (best) pieces.push(best); return !!best;
   };
+  if (allow) { // a typology's planned spots: fill them, nearest to upper pieces already placed first; each must be reachable on foot
+    let placed = 0; for (let pass = 0; pass < 3 && placed < target; pass++) for (const o of slots.filter((o) => !taken(o.slot)).sort((a, b) => dist(a) - dist(b) || rand() - 0.5)) { if (placed >= target) break; if (place(o, 'step')) placed++; }
+    return; }
   // cores first (as many as the target allows), then grow outward from them: each new piece must open onto an upper piece already placed
   const nCore = Math.max(1, Math.min(target, Math.round(slots.length * (0.15 + 0.25 * sr)), target >= 4 ? 99 : 1)); let made = 0, placed = 0;
   for (const o of cores.sort(() => rand() - 0.5)) { if (made >= nCore || placed >= target) break; if (made && dist(o) < 2) continue; if (place(o, 'core')) { made++; placed++; } }
@@ -4810,25 +4817,45 @@ function pruneUpper(pieces, tb) {
     if (w < 0) return e; pieces.splice(w, 1); }
   return evaluateCluster(pieces, tb, 0);
 }
+// the rules a typology adds to a grid formation: which ground slots stay empty, where upper pieces may go, how far apart pieces sit,
+// which tiles suit which slot, and a few after-moves (cantilevers)
+function typoPlan(key, rows, cols, tiers, rand) {
+  if (!key) return null; const mr = (rows - 1) / 2, mc = (cols - 1) / 2, perim = (r, c) => r === 0 || c === 0 || r === rows - 1 || c === cols - 1, center = (r, c) => Math.abs(r - mr) <= 0.5 && Math.abs(c - mc) <= 0.5;
+  const openOf = (t) => (Array.isArray(t.open) ? t.open.reduce((a, b) => a + b, 0) / t.open.length : 0);
+  if (key === 'terrace') { const T = Math.max(2, tiers), along = cols >= rows, n = along ? cols : rows, flip = rand() < 0.5;
+    const step = (r, c) => { let i = along ? c : r; if (flip) i = n - 1 - i; return Math.floor(i * T / n); };
+    return { tiers: T, allow: (k, r, c) => step(r, c) >= k, evenH: 4 }; }
+  if (key === 'atrium') { const T = Math.max(2, tiers); return { tiers: T, core: center, allow: (k, r, c) => !center(r, c), evenH: 2, ground: (t, r, c) => (center(r, c) ? (t.tallVoid ? 10 : -6) : 0) }; }
+  if (key === 'split') { const T = Math.max(2, tiers); return { tiers: T, allow: (k, r, c) => (r + c) % 2 === 0 && (k === 1 || r % 2 === 0), evenH: 3 }; }
+  if (key === 'podium') { const T = 3, cand = []; for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) cand.push([r, c, Math.abs(r - mr) + Math.abs(c - mc) + rand() * 0.8]);
+    cand.sort((a, b) => a[2] - b[2]); const [tr, tc] = cand[0]; return { tiers: T, allow: (k, r, c) => r === tr && c === tc, evenH: 4 }; }
+  if (key === 'cantilever') { const T = Math.max(2, tiers); return { tiers: T, allow: (k, r, c) => k === 1 && perim(r, c) && (r + c) % 2 === 0, evenH: 3, overhang: true }; }
+  if (key === 'pavilion') return { tiers: 1, spread: 1.45, loose: false, apart: true, ground: (t) => 8 * openOf(t) };
+  if (key === 'cloister') return { tiers: Math.min(tiers, 2), minRC: 3, skip: (r, c) => !perim(r, c), allow: (k, r, c) => perim(r, c) && (r + c) % 2 === 0, ground: (t) => 4 * openOf(t) };
+  return null;
+}
 function generateFormation(progKey, tiles, fits, ru, rand, rows, cols, opts) {
   const prog = Object.assign({ key: progKey }, PROGRAMS[progKey]); const byId = new Map(tiles.map((t) => [t.id, t])); const tb = (id) => byId.get(id);
-  const fitOf = new Map(tiles.map((t) => [t.id, 0.5])); const S = TILE_FT, tiers = Math.max(1, Math.min(3, (opts && opts.tiers) || 1));
+  const plan = typoPlan(opts && opts.typo, Math.max(rows, (opts && opts.typo === 'cloister') ? 3 : 1), Math.max(cols, (opts && opts.typo === 'cloister') ? 3 : 1), Math.max(1, Math.min(3, (opts && opts.tiers) || 1)), rand);
+  if (plan && plan.minRC) { rows = Math.max(rows, plan.minRC); cols = Math.max(cols, plan.minRC); }
+  const fitOf = new Map(tiles.map((t) => [t.id, 0.5])); const S = TILE_FT, tiers = plan ? plan.tiers : Math.max(1, Math.min(3, (opts && opts.tiers) || 1)), spread = (plan && plan.spread) || 1;
   const ground = tiles.filter((t) => !t.openBottom); const rots = ru.rotate === false ? [0] : [0, 1, 2, 3]; if (!ground.length) return null;
   let best = null, bs = -Infinity; const big = rows * cols * tiers; const runs = opts && opts.runs || (big > 24 ? 2 : big > 12 ? 3 : 6);
-  const order = FORM_SNAKE(rows, cols);
+  const order = FORM_SNAKE(rows, cols).filter(([r, c]) => !(plan && plan.skip && plan.skip(r, c)));
   for (let run = 0; run < runs; run++) {
     const pieces = [];
-    const coreAt = new Set(); if (tiers > 1) { const nC = Math.max(1, Math.round(rows * cols / 5)); const sh = order.slice().sort(() => rand() - 0.5); for (const [r, c] of sh) { if (coreAt.size >= nC) break; if ([...coreAt].some((q) => { const [a, b] = q.split(',').map(Number); return Math.abs(a - r) + Math.abs(b - c) < 2; })) continue; coreAt.add(r + ',' + c); } }
+    const coreAt = new Set(); if (plan && plan.core) { for (const [r, c] of order) if (plan.core(r, c)) coreAt.add(r + ',' + c); } else if (tiers > 1 && !plan) { const nC = Math.max(1, Math.round(rows * cols / 5)); const sh = order.slice().sort(() => rand() - 0.5); for (const [r, c] of sh) { if (coreAt.size >= nC) break; if ([...coreAt].some((q) => { const [a, b] = q.split(',').map(Number); return Math.abs(a - r) + Math.abs(b - c) < 2; })) continue; coreAt.add(r + ',' + c); } }
     const h0 = rand() < 0.5 ? 2 : Math.max(...ground.map((t) => t.storeys)) >= 3 && rand() < 0.4 ? 3 : 2;
     // 1. fill the ground formation, snake order, choosing tile + turn for passages
     for (const [r, c] of order) {
-      const sx = (c - (cols - 1) / 2) * S, sz = (r - (rows - 1) / 2) * S; let bp = null, bsc = -Infinity;
+      const sx = Math.round((c - (cols - 1) / 2) * S * spread), sz = Math.round((r - (rows - 1) / 2) * S * spread); let bp = null, bsc = -Infinity;
       const used = new Map(); pieces.forEach((q) => used.set(q.t, (used.get(q.t) || 0) + 1));
       for (const t of ground) for (const rot of rots) for (const mir of [false, true]) {
         if (mir && !(ru.mirror > 0)) continue;
         const pc = { t: t.id, rot, mir, sc: 1, base: 0, x: sx, z: sz, sx, sz, slot: r + ',' + c }; const ev = evaluateCluster(pieces.concat([pc]), tb, 0);
         let sc = (1 + 2 * (ru.passages ?? 0.6)) * ev.passages - 15 * ev.blocked - 12 * (ev.wzones - 1) - 1 * ev.nowhere - (ru.variety ?? 0.5) * 3.5 * (used.get(t.id) || 0) + (mir ? (rand() < ru.mirror ? 0.2 : -1) : 0) + rand() * 1.2;
-        if (tiers > 1) { const wantCore = coreAt.has(r + ',' + c); sc += wantCore ? (t.tallVoid && t.vo ? 8 : -4) : 0; sc -= 1.5 * Math.abs(t.storeys - h0); } // planned cores get a tall void; even heights keep upper floors level
+        if (plan && plan.ground) sc += plan.ground(t, r, c); if (plan && plan.apart) sc += 12 * (ev.wzones - 1) + 1 * ev.nowhere; // pavilions may stand apart
+        if (tiers > 1) { const wantCore = coreAt.has(r + ',' + c); sc += wantCore && !(plan && plan.ground) ? (t.tallVoid && t.vo ? 8 : -4) : 0; sc -= ((plan && plan.evenH) || 1.5) * Math.abs(t.storeys - h0); } // planned cores get a tall void; even heights keep upper floors level
         if (sc > bsc) { bsc = sc; bp = pc; }
       }
       pieces.push(bp);
@@ -4841,17 +4868,23 @@ function generateFormation(progKey, tiles, fits, ru, rand, rows, cols, opts) {
         pieces[i] = bp; e = evaluateCluster(pieces, tb, 0); } }
     stitchFlow(pieces, ground, tb, ru, rand, coreAt);
     // 2. loosen the ground layer
-    let ev = loosenFormation(pieces, tb, prog, ru, fitOf, rand, 420, 0);
+    let ev = plan && plan.loose === false ? evaluateCluster(pieces, tb, 0) : loosenFormation(pieces, tb, prog, ru, fitOf, rand, 420, 0);
     // 3. upper tiers
     const fillMode = ru.upper || 'sparse'; let prevN = rows * cols;
     for (let k = 1; k < tiers; k++) {
       const nSlots = pieces.filter((q) => (q.tier || 0) === k - 1).length; if (!nSlots) break;
       const target = Math.min(prevN, fillMode === 'full' ? nSlots : fillMode === 'some' ? Math.max(2, Math.round(nSlots * (0.3 + rand() * 0.2))) : 1 + Math.floor(rand() * Math.min(3, Math.max(1, Math.round(nSlots / 4)))));
-      fillTier(pieces, k, order, tiles, tb, prog, ru, rand, fitOf, target); pruneUpper(pieces, tb); stitchFlow(pieces, tiles, tb, ru, rand, null); pruneUpper(pieces, tb);
+      if (plan && plan.allow) { const want = order.filter(([r, c]) => plan.allow(k, r, c)).length; if (!want) break; fillTier(pieces, k, order, tiles, tb, prog, ru, rand, fitOf, want, (o) => plan.allow(k, o.r, o.c)); }
+      else fillTier(pieces, k, order, tiles, tb, prog, ru, rand, fitOf, target); pruneUpper(pieces, tb); stitchFlow(pieces, tiles, tb, ru, rand, null); pruneUpper(pieces, tb);
       prevN = pieces.filter((q) => (q.tier || 0) === k).length;
       ev = loosenFormation(pieces, tb, prog, ru, fitOf, rand, 260, k);
     }
-    stitchFlow(pieces, tiles, tb, ru, rand, coreAt); pruneUpper(pieces, tb); // final check that everything is one walkable system
+    if (!(plan && plan.apart)) { stitchFlow(pieces, tiles, tb, ru, rand, coreAt); pruneUpper(pieces, tb); } // final check that everything is one walkable system
+    // cantilevers: each upper edge piece slides outward past its support, as far as it stays held up and reachable
+    let over = 0; if (plan && plan.overhang) for (const q of pieces) { if (!(q.base > 0) || !q.slot) continue; const [r, c] = q.slot.split(',').map(Number);
+      const dx = c === 0 ? -1 : c === cols - 1 ? 1 : 0, dz = r === 0 ? -1 : r === rows - 1 ? 1 : 0; if (!dx && !dz) continue; const e0 = evaluateCluster(pieces, tb, 0), x0 = q.x, z0 = q.z, i = pieces.indexOf(q);
+      for (const f of [0.45, 0.35, 0.25]) { q.x = Math.round(x0 + dx * f * S); q.z = Math.round(z0 + dz * f * S); const e = evaluateCluster(pieces, tb, 0);
+        if (!e.floatIdx.has(i) && e.reach[i] && e.overlaps <= e0.overlaps && e.blocked <= e0.blocked && e.wzones <= e0.wzones) { over++; break; } q.x = x0; q.z = z0; } }
     // 4. with one tier, a few void stacks on top where a door-to-door way in exists
     const sr = ru.stack ?? prog.stack;
     if (tiers === 1 && sr > 0 && opts && opts.allowStack) for (let k = 0, made = 0; k < 120 && made < Math.max(1, Math.round(rows * cols * sr / 4)); k++) {
@@ -4862,7 +4895,8 @@ function generateFormation(progKey, tiles, fits, ru, rand, rows, cols, opts) {
     }
     alignMirrors(pieces, tb); ev = evaluateCluster(pieces, tb, 0);
     const upper = pieces.filter((q) => q.base > 0).length;
-    const sc = formationScore(pieces, ev, prog, ru, fitOf) + (ev.voidStacks ? 40 * Math.max(0.3, sr) : 0) + (tiers > 1 ? Math.min(upper, 3) * 6 : 0) - 4 * (ev.zones - 1) - 30 * (ev.wzones - 1) + rand() * 0.5;
+    let typoOk = 0; if (plan && plan.allow) for (const [r, c] of order) for (let k = 1; k < tiers; k++) if (plan.allow(k, r, c) && pieces.some((q) => q.slot === r + ',' + c && (q.tier || 0) === k)) typoOk++; // planned upper spots that got a piece
+    const sc = formationScore(pieces, ev, prog, ru, fitOf) + 12 * typoOk + 8 * over + (ev.voidStacks ? 40 * Math.max(0.3, sr) : 0) + (tiers > 1 && !plan ? Math.min(upper, 3) * 6 : 0) - 4 * (ev.zones - 1) - (plan && plan.apart ? 0 : 30) * (ev.wzones - 1) + rand() * 0.5;
     if (sc > bs) { bs = sc; best = { pieces, ev }; }
   }
   return best;
@@ -5404,6 +5438,25 @@ function renameClusterInline(id) {
 }
 function openCluster(id) { TL.cur = id; store.set('clSel', id); TL.pick = -1; TL.level = 0; TL.view = null; tFramed = false; renderAll(); renderLibrary(); }
 const SCALE_OPTS = { fixed: [1, 1], small: [0.85, 1.15], medium: [0.75, 1.3], large: [0.65, 1.5] };
+// Typology assist: named spatial types a grid generation can be steered toward (definitions from the studio brief).
+// Each key is turned into a plan in typoPlan() below.
+const TYPO_ASSIST = {
+  terrace: { label: 'Terraced / Stepped', def: 'Floor plates step back sequentially in section, creating outdoor roof decks, cascade views, or hillside adaptation.', how: 'The grid climbs one stacked piece at a time toward one end; each lower roof is the deck you walk onto the next step from.' },
+  atrium: { label: 'Atrium / Void-Centered', def: 'Multi-story spaces wrap inward around a skylit vertical void that connects levels visually and thermally.', how: 'The middle of the grid gets tall-void pieces and stays open above; upper pieces ring around it.' },
+  split: { label: 'Split-Level / Staggered', def: 'Half-story offsets overlap vertically to create visual continuity without full floor separations.', how: 'Upper pieces alternate in a checkerboard so neighbouring floors sit at staggered heights (the site works in whole 12 ft levels, so the offset is one level, not a half).' },
+  podium: { label: 'Plinth / Podium & Tower', def: 'A broad horizontal base anchors the ground plane while a slender vertical volume rises above it.', how: 'Every ground slot is filled as the plinth; one slot keeps stacking up as the tower.' },
+  cantilever: { label: 'Cantilevered / Overhanging', def: 'Upper volumes project outward beyond their structural supports to shelter spaces below.', how: 'Upper pieces sit on the edge pieces and slide outward past them, sheltering the ground beside.' },
+  pavilion: { label: 'Pavilion / Extroverted', def: 'Freestanding, permeable volumes sit inside an open landscape, radiating outward with minimal boundary.', how: 'One level of the most open pieces, spread apart with landscape between them.' },
+  cloister: { label: 'Cloister / Peristyle', def: 'A covered colonnade or arcade rings an open central garden, separating movement from the core.', how: 'Pieces fill only the ring of the grid (at least 3 × 3) and leave the middle open as the garden.' },
+};
+function renderTypoAssist() {
+  const box = $('tTypoList'); if (!box) return; const on = new Set(TL.rules.typos || []);
+  box.innerHTML = Object.entries(TYPO_ASSIST).map(([k, t]) => `<label class="typoitem" title="${esc(t.how)}"><input type="checkbox" data-typo="${k}"${on.has(k) ? ' checked' : ''}><span><b>${esc(t.label)}</b><small>${esc(t.def)}</small></span></label>`).join('');
+  box.querySelectorAll('[data-typo]').forEach((cb) => cb.addEventListener('change', () => { const set = new Set(TL.rules.typos || []); cb.checked ? set.add(cb.dataset.typo) : set.delete(cb.dataset.typo); TL.rules.typos = [...set]; store.set('clRules', TL.rules); }));
+  $('tTypoUse').value = TL.rules.typoUse || 'some';
+}
+$('tTypoUse').addEventListener('change', (e) => { TL.rules.typoUse = e.target.value; store.set('clRules', TL.rules); });
+function pickTypo(rand) { const on = (TL.rules.typos || []).filter((k) => TYPO_ASSIST[k]); if (!on.length) return null; if ((TL.rules.typoUse || 'some') !== 'all' && rand() < 0.4) return null; return on[Math.floor(rand() * on.length)]; }
 function rulesFor(k) { const r = TL.rules, P = PROGRAMS[k]; return { pieces: r.pieces || P.pieces, offset: r.offset, stack: r.stack >= 0 ? r.stack : P.stack, scaleRange: SCALE_OPTS[r.scale] || P.scale, mirror: r.mirror, variety: r.variety, passages: r.passages, rotate: r.rotate, upper: r.upper || 'sparse' }; }
 function nextName(k, parent) {
   if (!parent) { const n = TL.clusters.filter((c) => c.program === k && !c.parent).length; return `${PROGRAMS[k].label} ${String.fromCharCode(65 + (n % 26))}${n >= 26 ? Math.floor(n / 26) : ''}`; }
@@ -5418,10 +5471,11 @@ async function newCluster(k) {
   if (!(await ensureTiles())) return; const { ts, f } = fitsNow(); status(`Building a ${PROGRAMS[k].label.toLowerCase()} cluster…`); await new Promise((r) => setTimeout(r, 20));
   const L = layoutRC(), seed = (Date.now() % 100000) | 0;
   if (L) { status(`Building a ${L.rows} × ${L.cols}${L.tiers > 1 ? ' × ' + L.tiers : ''} ${PROGRAMS[k].label.toLowerCase()} formation…`); await new Promise((r) => setTimeout(r, 20)); }
-  const res = L ? generateFormation(k, ts, f, rulesFor(k), C.mulberry32(seed), L.rows, L.cols, { tiers: L.tiers || 1 }) : generateCluster(k, ts, f, rulesFor(k), C.mulberry32(seed), { runs: 14 }); if (!res) { toast('Could not build a cluster from these tiles.'); return; }
-  const c = { id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), program: k, name: nextName(k, null), parent: null, seed, pieces: res.pieces, layout: L, createdAt: Date.now(), by: myClient };
+  const typo = L ? pickTypo(C.mulberry32(seed + 7)) : null; if (typo) { status(`Building a ${L.rows} × ${L.cols} ${TYPO_ASSIST[typo].label.toLowerCase()}…`); await new Promise((r) => setTimeout(r, 20)); }
+  const res = L ? generateFormation(k, ts, f, rulesFor(k), C.mulberry32(seed), L.rows, L.cols, { tiers: L.tiers || 1, typo }) : generateCluster(k, ts, f, rulesFor(k), C.mulberry32(seed), { runs: 14 }); if (!res) { toast('Could not build a cluster from these tiles.'); return; }
+  const c = { id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), program: k, name: nextName(k, null), parent: null, seed, pieces: res.pieces, layout: L, typo: typo || null, createdAt: Date.now(), by: myClient };
   await putCluster(c); openCluster(c.id); const e = res.ev; const sh = c.pieces.filter((q) => q.sx != null && Math.hypot(q.x - q.sx, q.z - q.sz) >= 1).length;
-  status(`${c.name}: ${c.pieces.length} pieces, ${e.passages} passages, ${e.blocked} blocked, ${e.entrances} entrances${L ? `, ${sh} shifted off the grid` : ''}${L && L.tiers > 1 ? `, ${c.pieces.filter((q) => q.tier).length} upper-tier pieces` : ''}${e.voidStacks ? `, ${e.voidStacks} void stack${e.voidStacks > 1 ? 's' : ''}` : ''}.`, 1);
+  status(`${c.name}: ${c.pieces.length} pieces, ${e.passages} passages, ${e.blocked} blocked, ${e.entrances} entrances${L ? `, ${sh} shifted off the grid` : ''}${L && L.tiers > 1 ? `, ${c.pieces.filter((q) => q.tier).length} upper-tier pieces` : ''}${e.voidStacks ? `, ${e.voidStacks} void stack${e.voidStacks > 1 ? 's' : ''}` : ''}${typo ? ` · ${TYPO_ASSIST[typo].label}` : ''}${!L && (TL.rules.typos || []).length ? ' · typology assist only shapes grid layouts' : ''}.`, 1);
 }
 $('tBranch').addEventListener('click', async () => {
   const p = curCluster(); if (!p || !(await ensureTiles())) return; const { ts, f } = fitsNow(); status('Branching…'); await new Promise((r) => setTimeout(r, 20));
@@ -5465,7 +5519,7 @@ function addTile(id) {
 /* --- rules + settings --- */
 const RULE_UI = [['tRLayout', 'layout', 'str'], ['tRPieces', 'pieces', 'sel'], ['tROff', 'offset', 'range'], ['tRStack', 'stack', 'sel'], ['tRScale', 'scale', 'str'], ['tRMir', 'mirror', 'range'], ['tRVar', 'variety', 'range'], ['tRPass', 'passages', 'range'], ['tRRot', 'rotate', 'check']];
 function renderTileSettings() {
-  const s = TL.set; TILE_FT = s.module || 30; $('tMod').value = String(TILE_FT); $('tH').value = s.H; $('tDetail').value = String(s.detail); $('tExpDetail').value = String(s.exportDetail);
+  renderTypoAssist(); const s = TL.set; TILE_FT = s.module || 30; $('tMod').value = String(TILE_FT); $('tH').value = s.H; $('tDetail').value = String(s.detail); $('tExpDetail').value = String(s.exportDetail);
   for (const [id, key, kind] of RULE_UI) { const el = $(id), v = TL.rules[key]; if (kind === 'check') el.checked = !!v; else el.value = String(v); const o = $(id + 'Out'); if (o) o.value = Math.round(v * 100) + '%'; }
   $('tRCustom').hidden = TL.rules.layout !== 'custom'; $('tRRows').value = TL.rules.rows || 2; $('tRCols').value = TL.rules.cols || 3; $('tRPieces').disabled = TL.rules.layout !== 'free'; $('tRTiers').value = String(TL.rules.tiers || 1); $('tRTiers').hidden = TL.rules.layout === 'free'; $('tRUpper').value = TL.rules.upper || 'sparse'; $('tRUpper').hidden = TL.rules.layout === 'free' || (TL.rules.tiers || 1) < 2;
 }
@@ -6093,7 +6147,7 @@ function showAsm(on) {
 }
 
 /* ---------------- boot ---------------- */
-window.__sbs = { get TL() { return TL; }, get REF() { return REF; }, get AS() { return AS; }, prepAll, tileFull, evaluateCluster, asmPieces, asmCur, byIdFull, pSize, fuseCluster, edgeOf }; // read-only debugging handle
+window.__sbs = { get TL() { return TL; }, get REF() { return REF; }, get AS() { return AS; }, prepAll, tileFull, evaluateCluster, asmPieces, asmCur, byIdFull, pSize, fuseCluster, edgeOf, generateFormation, fitsNow, rulesFor, typoPlan, mulberry: (n) => C.mulberry32(n) }; // read-only debugging handle
 renderCrit(); renderSettings(); renderModels(); renderPicks(); renderInspector(); sizeViewer(); sizeMap();
 if (BUILD) { document.body.classList.add('build'); document.title = 'SubD Blend SOM · Clusters'; showTiling(true); } // the light site skips the SOM map's start-up work
 else { const t0 = store.get('typo', 'gathering'); renderTypoTabs(); switchTypo(TABS.some((t) => t.key === t0) ? t0 : 'gathering').then(preloadAll); }
