@@ -4822,13 +4822,14 @@ function pruneUpper(pieces, tb) {
 function typoPlan(key, rows, cols, tiers, rand) {
   if (!key) return null; const mr = (rows - 1) / 2, mc = (cols - 1) / 2, perim = (r, c) => r === 0 || c === 0 || r === rows - 1 || c === cols - 1, center = (r, c) => Math.abs(r - mr) <= 0.5 && Math.abs(c - mc) <= 0.5;
   const openOf = (t) => (Array.isArray(t.open) ? t.open.reduce((a, b) => a + b, 0) / t.open.length : 0);
-  if (key === 'terrace') { const T = Math.max(2, tiers), along = cols >= rows, n = along ? cols : rows, flip = rand() < 0.5;
+  if (key === 'terrace') { const along = cols >= rows, n = along ? cols : rows, T = Math.max(tiers, Math.min(3, n)), flip = rand() < 0.5; // as many steps as the long side allows (up to 3 levels)
     const step = (r, c) => { let i = along ? c : r; if (flip) i = n - 1 - i; return Math.floor(i * T / n); };
     return { tiers: T, allow: (k, r, c) => step(r, c) >= k, evenH: 4 }; }
   if (key === 'atrium') { const T = Math.max(2, tiers); return { tiers: T, core: center, allow: (k, r, c) => !center(r, c), evenH: 2, ground: (t, r, c) => (center(r, c) ? (t.tallVoid ? 10 : -6) : 0) }; }
   if (key === 'split') { const T = Math.max(2, tiers); return { tiers: T, allow: (k, r, c) => (r + c) % 2 === 0 && (k === 1 || r % 2 === 0), evenH: 3 }; }
   if (key === 'podium') { const T = 3, cand = []; for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) cand.push([r, c, Math.abs(r - mr) + Math.abs(c - mc) + rand() * 0.8]);
-    cand.sort((a, b) => a[2] - b[2]); const [tr, tc] = cand[0]; return { tiers: T, allow: (k, r, c) => r === tr && c === tc, evenH: 4 }; }
+    cand.sort((a, b) => a[2] - b[2]); const [tr, tc] = cand[0], tw = (r, c) => r === tr && c === tc;
+    return { tiers: T, allow: (k, r, c) => tw(r, c), evenH: 0.5, ground: (t, r, c) => (tw(r, c) ? 6 * t.storeys + (t.openBottom ? -20 : 0) : -3 * t.storeys) }; } // a low, broad plinth; the tallest piece starts the tower
   if (key === 'cantilever') { const T = Math.max(2, tiers); return { tiers: T, allow: (k, r, c) => k === 1 && perim(r, c) && (r + c) % 2 === 0, evenH: 3, overhang: true }; }
   if (key === 'pavilion') return { tiers: 1, spread: 1.45, loose: false, apart: true, ground: (t) => 8 * openOf(t) };
   if (key === 'cloister') return { tiers: Math.min(tiers, 2), minRC: 3, skip: (r, c) => !perim(r, c), allow: (k, r, c) => perim(r, c) && (r + c) % 2 === 0, ground: (t) => 4 * openOf(t) };
