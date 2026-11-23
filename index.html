@@ -4989,9 +4989,12 @@ function fuseCluster(pieces, zOf, ev, opts) {
             const ii = ix + iy * nx + iz * sxy, fill = db + (1 - w) * 0.6; if (fill < D[ii]) { const h = Math.max(1.2 - Math.abs(fill - D[ii]), 0) / 1.2; D[ii] = Math.min(fill, D[ii]) - h * h * 0.3; } near[ii] = Math.max(near[ii], 2); } } } } }
   // 1b. floor holes: on each level, the slab under every piece that stands there is checked; gaps between pieces and holes
   // are patched (all of them on the ground floor; on upper floors only holes up to holesMax sq ft, so real voids stay open)
-  let holes = 0; const slabs = []; { const levels = [...new Set(items.filter((q) => !q.openBottom).map((q) => q.pc.base))];
+  // every floor plate counts, not just the one a piece stands on: a 2- or 3-storey piece has floors at each level it spans
+  // (an open-bottomed piece has none at its own base), so upper plates are bridged and patched too
+  const spans = (q, g) => { const n = Math.max(1, Math.round((q.top - 1 - q.pc.base * H) / H)); return g >= q.pc.base + (q.openBottom ? 1 : 0) && g < q.pc.base + n; };
+  let holes = 0; const slabs = []; { const gMax = Math.max(0, ...items.map((q) => Math.ceil(q.top / H))), levels = []; for (let g = 0; g <= gMax; g++) if (items.some((q) => spans(q, g))) levels.push(g);
     for (const g of levels) { const yf = g * H, region = new Uint8Array(nx * nz), solid = new Uint8Array(nx * nz);
-      for (const q of items) { if (q.pc.base !== g || q.openBottom) continue; const S = q.S / 2 + 1.5;
+      for (const q of items) { if (!spans(q, g)) continue; const S = q.S / 2 + 1.5;
         for (let iz = Math.max(0, Math.floor((q.pc.z - S - z0) / v)); iz <= Math.min(nz - 1, Math.ceil((q.pc.z + S - z0) / v)); iz++) for (let ix = Math.max(0, Math.floor((q.pc.x - S - x0) / v)); ix <= Math.min(nx - 1, Math.ceil((q.pc.x + S - x0) / v)); ix++) region[ix + iz * nx] = 1; }
       const top = new Float32Array(nx * nz).fill(yf); // floor surface height per column (models' floors sit a little below the level line)
       for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) { const c = ix + iz * nx; if (!region[c]) continue; const X = x0 + ix * v, Z = z0 + iz * v;
@@ -5004,7 +5007,7 @@ function fuseCluster(pieces, zOf, ev, opts) {
       for (let c = 0; c < nx * nz; c++) if (region[c] && !solid[c] && closed[c]) fill[c] = 1;
       // seams: models rarely reach the very edge of their tile, so two touching pieces leave a slot between their floors.
       // Along every shared edge, each row is bridged from one floor to the other (up to 10 ft); rows with no floor on a side stay open
-      const onLvl = items.filter((q) => q.pc.base === g && !q.openBottom), cellAt = (X, Z) => { const ix = Math.round((X - x0) / v), iz = Math.round((Z - z0) / v); return ix < 0 || iz < 0 || ix >= nx || iz >= nz ? -1 : ix + iz * nx; };
+      const onLvl = items.filter((q) => spans(q, g)), cellAt = (X, Z) => { const ix = Math.round((X - x0) / v), iz = Math.round((Z - z0) / v); return ix < 0 || iz < 0 || ix >= nx || iz >= nz ? -1 : ix + iz * nx; };
       for (const A of onLvl) for (const B of onLvl) { if (A === B) continue;
         for (const ws of [0, 1]) { const ea = edgeOf(A.pc, ws), eb = edgeOf(B.pc, ws + 2); if (Math.abs(ea.c - eb.c) > 2.5) continue; const o0 = Math.max(ea.a, eb.a), o1 = Math.min(ea.b, eb.b); if (o1 - o0 < 1) continue;
           const c = (ea.c + eb.c) / 2, along = ws === 0, pt = (n, u) => along ? cellAt(n, u) : cellAt(u, n);
@@ -5755,7 +5758,7 @@ trr.localClippingEnabled = true; var tSecSt = sectionUI($('tSec'), () => applySe
 /* ---------------- Fuse step: one cluster as one form, joins perfected ---------------- */
 var fuseOn = false;
 var FZ = { cur: store.get('fzSel', null), tool: 'orbit', base: null, baseSig: '', mesh: null, tok: 0, framed: false };
-const FZ_DEF = { blend: 4, smooth: 6, clear: 2, holes: 80, open: 'blocked' };
+const FZ_DEF = { blend: 4, smooth: 6, clear: 2, holes: 150, open: 'blocked' };
 function fuseSent() { return TL.clusters.filter((c) => c.fz && c.fz.sent).sort((a, b) => a.fz.sent - b.fz.sent); }
 const fzCluster = () => TL.clusters.find((c) => c.id === FZ.cur && c.fz) || null;
 const fzCanvas = $('fzViewer'), fzr = new THREE.WebGLRenderer({ canvas: fzCanvas, antialias: true }); fzr.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
