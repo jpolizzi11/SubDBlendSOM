@@ -520,6 +520,9 @@ details.sub > .settings { padding-bottom: 6px; }
         <label for="tH">Floor-to-floor (ft)<small>Every floor snaps to multiples of this, so floorplates align.</small></label><input type="number" id="tH" min="8" max="30" step="1">
         <label for="tDetail">Preview detail<small>Voxels per tile in the 3D view.</small></label><select id="tDetail"><option value="48">48</option><option value="64">64</option><option value="96">96</option></select>
         <label for="tExpDetail">Export detail<small>Higher is smoother and a bigger file.</small></label><select id="tExpDetail"><option value="64">64</option><option value="96">96</option><option value="128">128</option></select>
+        <label for="tExpUnits">Export units<small>Real scale. Match your Rhino model's units so pieces come in at full size (a 30 ft tile = 30 ft).</small></label><select id="tExpUnits"><option value="ft">Feet</option><option value="in">Inches</option><option value="m">Meters</option><option value="mm">Millimeters</option></select>
+        <label for="tExpFmt">Export file<small>OBJ keeps the building and the routes as separate named objects in Rhino. STL is one mesh per file.</small></label><select id="tExpFmt"><option value="obj">OBJ (for Rhino)</option><option value="stl">STL</option></select>
+        <label for="tExpPaths">Circulation in export<small>Lines come in as polyline curves (OBJ only); pipes as a solid 1 ft tube mesh.</small></label><select id="tExpPaths"><option value="none">None</option><option value="lines">Lines</option><option value="pipes">Pipes</option><option value="both">Lines and pipes</option></select>
       </div>
     </details>
     <details class="fold" open>
@@ -655,7 +658,7 @@ details.sub > .settings { padding-bottom: 6px; }
     <section class="panel">
       <h2>3D <span class="actions" style="margin:0"><select id="asmColor" aria-label="Colour by"><option value="cluster">Colour by cluster</option><option value="program">Colour by program</option><option value="model">Colour by original model</option></select>
         <label class="note" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="asmFuse"> Fuse</label><label class="note" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="asmPathsChk"> Paths</label>
-        <button class="btn small primary" id="asmExport">Fused STL .zip</button></span></h2>
+        <button class="btn small primary" id="asmExport">Export .zip</button></span></h2>
       <canvas id="asmViewer"></canvas>
       <div class="secbar" id="asmSec"></div>
       <div class="vhint" style="padding:6px 14px 10px">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. Pink is your outline (dashed: the height limit).</div>
@@ -5112,7 +5115,7 @@ function fuseMesh(base, ops) { const D = fuseApplyOps(base, ops); return fuseNet
 let tilingOn = false;
 const TL = { info: new Map(), pre: new Map(), feet: new Map(), prepJob: null, local: false, clusters: [], cur: store.get('clSel', null), pick: -1, level: 0,
   color: 'clay', showSeams: true, showLevels: true, paths: { on: false, sig: '', data: null, busy: '' }, fuse: { on: false, blend: 4, open: 'blocked', sig: '', geom: null, busy: false, tok: 0 }, view: null, saveT: new Map(), fitsKey: '', fits: null,
-  set: Object.assign({ module: 30, H: 12, detail: 64, exportDetail: 64 }, store.get('clSet', {})),
+  set: Object.assign({ module: 30, H: 12, detail: 64, exportDetail: 64, expUnits: 'ft', expFmt: 'obj', expPaths: 'none' }, store.get('clSet', {})),
   rules: Object.assign({ layout: 'free', rows: 2, cols: 3, tiers: 1, upper: 'sparse', pieces: 0, offset: 0.7, stack: -1, scale: 'auto', mirror: 0.3, variety: 0.5, passages: 0.6, rotate: true }, store.get('clRules', {})) };
 TILE_FT = TL.set.module;
 const tileSig = (it) => JSON.stringify([it.set, it.a, it.R]);
@@ -5523,7 +5526,7 @@ function addTile(id) {
 /* --- rules + settings --- */
 const RULE_UI = [['tRLayout', 'layout', 'str'], ['tRPieces', 'pieces', 'sel'], ['tROff', 'offset', 'range'], ['tRStack', 'stack', 'sel'], ['tRScale', 'scale', 'str'], ['tRMir', 'mirror', 'range'], ['tRVar', 'variety', 'range'], ['tRPass', 'passages', 'range'], ['tRRot', 'rotate', 'check']];
 function renderTileSettings() {
-  renderTypoAssist(); const s = TL.set; TILE_FT = s.module || 30; $('tMod').value = String(TILE_FT); $('tH').value = s.H; $('tDetail').value = String(s.detail); $('tExpDetail').value = String(s.exportDetail);
+  renderTypoAssist(); const s = TL.set; TILE_FT = s.module || 30; $('tMod').value = String(TILE_FT); $('tH').value = s.H; $('tDetail').value = String(s.detail); $('tExpDetail').value = String(s.exportDetail); $('tExpUnits').value = s.expUnits || 'ft'; $('tExpFmt').value = s.expFmt || 'obj'; $('tExpPaths').value = s.expPaths || 'none';
   for (const [id, key, kind] of RULE_UI) { const el = $(id), v = TL.rules[key]; if (kind === 'check') el.checked = !!v; else el.value = String(v); const o = $(id + 'Out'); if (o) o.value = Math.round(v * 100) + '%'; }
   $('tRCustom').hidden = TL.rules.layout !== 'custom'; $('tRRows').value = TL.rules.rows || 2; $('tRCols').value = TL.rules.cols || 3; $('tRPieces').disabled = TL.rules.layout !== 'free'; $('tRTiers').value = String(TL.rules.tiers || 1); $('tRTiers').hidden = TL.rules.layout === 'free'; $('tRUpper').value = TL.rules.upper || 'sparse'; $('tRUpper').hidden = TL.rules.layout === 'free' || (TL.rules.tiers || 1) < 2;
 }
@@ -5536,6 +5539,48 @@ $('tMod').addEventListener('change', (e) => { TL.set.module = +e.target.value; s
 $('tH').addEventListener('change', (e) => { TL.set.H = Math.max(8, Math.min(30, +e.target.value || 12)); saveSet(); renderTileSettings(); TL.fitsKey = ''; renderAll(); renderLibrary(); });
 $('tDetail').addEventListener('change', (e) => { TL.set.detail = +e.target.value; saveSet(); prepAll(); });
 $('tExpDetail').addEventListener('change', (e) => { TL.set.exportDetail = +e.target.value; saveSet(); });
+for (const [id, key] of [['tExpUnits', 'expUnits'], ['tExpFmt', 'expFmt'], ['tExpPaths', 'expPaths']]) $(id).addEventListener('change', (e) => { TL.set[key] = e.target.value; saveSet(); });
+function clusterPathsFor(c) { if ((TL.set.expPaths || 'none') === 'none') return null; const sig = fuseSig(c, 0.5) + '|paths2'; if (TL.paths.sig === sig && TL.paths.data) return TL.paths.data.paths;
+  status('Tracing the walking routes for the export…'); const ev = evaluateCluster(c.pieces, byIdFull(), 0), zs = new Map();
+  const base = fuseCluster(c.pieces, (i) => { const pc = c.pieces[i]; if (!refItem(pc.t)) return null; const cut = !!(ev.roofCut && ev.roofCut.has(i)), key = pc.t + (cut ? '|c' : ''); if (!zs.has(key)) zs.set(key, fuseDataFor(pc.t, cut)); return zs.get(key); }, ev, { H: TL.set.H, voxel: 0.5, blend: 1.5, smooth: 1, open: 'none', clear: 0 });
+  if (!base) return null; TL.paths.data = circulation(base, withStoreys(c.pieces), ev, TL.set.H); TL.paths.sig = sig; return TL.paths.data.paths; }
+/* --- export at real scale: building mesh (+ circulation as polylines and/or pipes) as OBJ or STL, Z up, in the chosen units --- */
+const EXP_UNITS = { ft: [1, 'feet'], in: [12, 'inches'], m: [0.3048, 'meters'], mm: [304.8, 'millimeters'] };
+// a tube mesh along each route (rings at every point, frames kept upright since routes run mostly level)
+function pipeMesh(paths, rad = 0.5, sides = 8) { const P = [], I = [];
+  for (const pts of paths) { if (pts.length < 2) continue; const base = P.length / 3;
+    for (let k = 0; k < pts.length; k++) { const a = pts[Math.max(0, k - 1)], b = pts[Math.min(pts.length - 1, k + 1)]; let tx = b[0] - a[0], ty = b[1] - a[1], tz = b[2] - a[2]; const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+      let ux = 0, uy = 1, uz = 0; if (Math.abs(ty) > 0.9) { ux = 1; uy = 0; } let nx = ty * uz - tz * uy, ny = tz * ux - tx * uz, nz = tx * uy - ty * ux; const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+      const bx = ty * nz - tz * ny, by = tz * nx - tx * nz, bz = tx * ny - ty * nx;
+      for (let j = 0; j < sides; j++) { const an = (j / sides) * Math.PI * 2, c = Math.cos(an) * rad, s2 = Math.sin(an) * rad; P.push(pts[k][0] + nx * c + bx * s2, pts[k][1] + ny * c + by * s2, pts[k][2] + nz * c + bz * s2); } }
+    for (let k = 0; k < pts.length - 1; k++) for (let j = 0; j < sides; j++) { const a = base + k * sides + j, b = base + k * sides + (j + 1) % sides, c = a + sides, d = b + sides; I.push(a, c, b, b, c, d); }
+    // end caps
+    for (const [k, flip] of [[0, true], [pts.length - 1, false]]) { const ci = P.length / 3; P.push(...pts[k]); for (let j = 0; j < sides; j++) { const a = base + k * sides + j, b = base + k * sides + (j + 1) % sides; flip ? I.push(ci, b, a) : I.push(ci, a, b); } } }
+  return { positions: new Float32Array(P), indices: new Uint32Array(I) }; }
+// meshes: [{ name, positions (feet, Y up), indices }], paths: polylines of [x, y, z] in feet, Y up
+async function exportModel(name, meshes, paths, what) {
+  const st = TL.set, [f, unitName] = EXP_UNITS[st.expUnits] || EXP_UNITS.ft, fmt = st.expFmt || 'obj', mode = st.expPaths || 'none';
+  const wantLines = !!(paths && paths.length) && (mode === 'lines' || mode === 'both'), wantPipes = !!(paths && paths.length) && (mode === 'pipes' || mode === 'both' || (fmt === 'stl' && mode === 'lines'));
+  const zu = (x, y, z) => [x * f, -z * f, y * f], all = meshes.slice(); if (wantPipes) all.push(Object.assign({ name: 'circulation_pipes' }, pipeMesh(paths, 0.5)));
+  const files = [], base = safe(name);
+  if (fmt === 'stl') {
+    for (const m of all) { const P = m.positions, I = m.indices, nt = I.length / 3, buf = new ArrayBuffer(84 + nt * 50), dv = new DataView(buf), hdr = `SubD ${what} (${unitName}, Z up)`; for (let q = 0; q < Math.min(80, hdr.length); q++) dv.setUint8(q, hdr.charCodeAt(q)); dv.setUint32(80, nt, true); let o = 84;
+      for (let t = 0; t < I.length; t += 3) { const a = zu(P[3 * I[t]], P[3 * I[t] + 1], P[3 * I[t] + 2]), b = zu(P[3 * I[t + 1]], P[3 * I[t + 1] + 1], P[3 * I[t + 1] + 2]), c = zu(P[3 * I[t + 2]], P[3 * I[t + 2] + 1], P[3 * I[t + 2] + 2]);
+        const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2]; let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz) || 1;
+        dv.setFloat32(o, nx / l, true); dv.setFloat32(o + 4, ny / l, true); dv.setFloat32(o + 8, nz / l, true); o += 12; for (const q of [a, b, c]) { dv.setFloat32(o, q[0], true); dv.setFloat32(o + 4, q[1], true); dv.setFloat32(o + 8, q[2], true); o += 12; } dv.setUint16(o, 0, true); o += 2; }
+      files.push({ name: base + (m.name === 'building' ? '' : '-' + m.name) + '.stl', data: new Uint8Array(buf) }); }
+  } else {
+    const out = [`# SubD Blend SOM · ${what} "${name}"`, `# units: ${unitName} (real scale), Z up`]; let vo = 0; const n6 = (x) => +x.toFixed(4);
+    for (const m of all) { const P = m.positions, I = m.indices; out.push('o ' + m.name); for (let i = 0; i < P.length; i += 3) { const q = zu(P[i], P[i + 1], P[i + 2]); out.push(`v ${n6(q[0])} ${n6(q[1])} ${n6(q[2])}`); }
+      for (let t = 0; t < I.length; t += 3) out.push(`f ${I[t] + 1 + vo} ${I[t + 1] + 1 + vo} ${I[t + 2] + 1 + vo}`); vo += P.length / 3; }
+    if (wantLines) { out.push('o circulation_lines'); for (const pts of paths) { if (pts.length < 2) continue; const ids = []; for (const p of pts) { const q = zu(p[0], p[1], p[2]); out.push(`v ${n6(q[0])} ${n6(q[1])} ${n6(q[2])}`); ids.push(++vo); } out.push('l ' + ids.join(' ')); } }
+    files.push({ name: base + '.obj', data: new TextEncoder().encode(out.join('\n') + '\n') });
+  }
+  if (fmt === 'stl' && mode === 'lines' && wantLines) toast('Lines need OBJ: STL holds meshes only, so the routes went in as pipes.');
+  status('Packing…', 1); await save(base + '.zip', C.zip(files));
+  const lines = wantLines && fmt === 'obj';
+  return `${unitName}, Z up${lines || wantPipes ? ', with circulation ' + (lines && wantPipes ? 'lines and pipes' : lines ? 'lines' : 'pipes') : ''}`;
+}
 $('tLevels').addEventListener('change', (e) => { TL.showLevels = e.target.checked; renderTiles3D(); });
 $('tPaths').addEventListener('change', (e) => { TL.paths.on = e.target.checked; renderTiles3D(); });
 $('tFuse').addEventListener('change', (e) => { TL.fuse.on = e.target.checked; if (!TL.fuse.on) status('Pieces shown separately.', 1); renderTiles3D(); });
@@ -5549,29 +5594,22 @@ $('tColor').addEventListener('change', (e) => { TL.color = e.target.value; rende
 $('tileExport').addEventListener('click', async () => {
   const c = curCluster(); if (!c || !c.pieces.length) { toast('Nothing to export.'); return; } const btn = $('tileExport'); btn.disabled = true;
   if (TL.fuse.on) { try { status('Exporting · fusing at export detail…'); await new Promise((r) => setTimeout(r, 30));
-      const out = fuseNow(c, TILE_FT / (TL.set.exportDetail || 64)); if (!out) throw new Error('nothing to fuse'); const P = out.mesh.positions, I = out.mesh.indices, nt = I.length / 3;
-      const buf = new ArrayBuffer(84 + nt * 50), dv = new DataView(buf); const hdr = 'SubD cluster, fused (feet, Z up)'; for (let q = 0; q < hdr.length; q++) dv.setUint8(q, hdr.charCodeAt(q)); dv.setUint32(80, nt, true);
-      let o = 84; const vt = (v) => [P[3 * v], -P[3 * v + 2], P[3 * v + 1]];
-      for (let t = 0; t < I.length; t += 3) { const a = vt(I[t]), b = vt(I[t + 1]), cc = vt(I[t + 2]); const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = cc[0] - a[0], vy = cc[1] - a[1], vz = cc[2] - a[2]; let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz) || 1;
-        dv.setFloat32(o, nx / l, true); dv.setFloat32(o + 4, ny / l, true); dv.setFloat32(o + 8, nz / l, true); o += 12; for (const q of [a, b, cc]) { dv.setFloat32(o, q[0], true); dv.setFloat32(o + 4, q[1], true); dv.setFloat32(o + 8, q[2], true); o += 12; } dv.setUint16(o, 0, true); o += 2; }
-      const nm = safe(c.name) + '-fused'; status('Packing…', 1); await save(nm + '.zip', C.zip([{ name: nm + '.stl', data: new Uint8Array(buf) }])); status(`Exported ${c.name} as one fused solid.`, 1);
+      const out = fuseNow(c, TILE_FT / (TL.set.exportDetail || 64)); if (!out) throw new Error('nothing to fuse');
+      const how = await exportModel(c.name + '-fused', [{ name: 'building', positions: out.mesh.positions, indices: out.mesh.indices }], clusterPathsFor(c), 'cluster, fused'); status(`Exported ${c.name} as one fused solid · ${how}.`, 1);
     } catch (e) { console.warn(e); toast('Could not export: ' + (e.message || e)); } btn.disabled = false; return; }
   try {
     const H = TL.set.H, r = TL.set.exportDetail || 64, geo = new Map(), ids = [...new Set(c.pieces.map((q) => q.t))].filter((id) => refItem(id));
     for (let k = 0; k < ids.length; k++) { const it = refItem(ids[k]); status(`Exporting · building ${it.name} (${k + 1}/${ids.length})…`, (k + 1) / (ids.length + 1));
       const b = await refPipeline(it, r), sc = b.R / b.fullR, lv = b.levels.filter((l) => l.n >= 0.02 * b.fullR * b.fullR).map((l) => ({ h: l.h * sc, n: l.n })); geo.set(ids[k], tileFeet(b.mesh, lv, H));
       const pre = TL.pre.get(ids[k]); if (pre && pre.tallVoid && c.pieces.some((q, qi) => q.t === ids[k] && TL.ev && TL.ev.roofCut.has(qi))) { const bc = await refPipeline(it, r, (Fs) => roofCut(Fs, b.fullR, pre.vo)); geo.set(ids[k] + '|cut', tileFeet(bc.mesh, lv, H)); } }
-    const parts = c.pieces.map((q, qi) => Object.assign({}, q, { gk: TL.ev && TL.ev.roofCut.has(qi) && geo.has(q.t + '|cut') ? q.t + '|cut' : q.t })).filter((q) => geo.has(q.gk)); const nt = parts.reduce((a, q) => a + geo.get(q.gk).indices.length / 3, 0);
-    const buf = new ArrayBuffer(84 + nt * 50), dv = new DataView(buf); const hdr = 'SubD cluster (feet, Z up)'; for (let q = 0; q < hdr.length; q++) dv.setUint8(q, hdr.charCodeAt(q)); dv.setUint32(80, nt, true);
-    let o = 84;
-    for (const pc of parts) { const g = geo.get(pc.gk), P = g.positions, I = g.indices, sc = pc.sc || 1, th = -pc.rot * Math.PI / 2, co = Math.cos(th), si = Math.sin(th);
-      const tp = (v) => { const x = P[3 * v] * (pc.mir ? -1 : 1) * sc, y = P[3 * v + 1] + pc.base * H, z = P[3 * v + 2] * sc; return [x * co + z * si + pc.x, -(-x * si + z * co + pc.z), y]; };
-      for (let t = 0; t < I.length; t += 3) { const a = tp(I[t]), b = tp(pc.mir ? I[t + 2] : I[t + 1]), cc = tp(pc.mir ? I[t + 1] : I[t + 2]);
-        const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = cc[0] - a[0], vy = cc[1] - a[1], vz = cc[2] - a[2]; let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz) || 1;
-        dv.setFloat32(o, nx / l, true); dv.setFloat32(o + 4, ny / l, true); dv.setFloat32(o + 8, nz / l, true); o += 12;
-        for (const q of [a, b, cc]) { dv.setFloat32(o, q[0], true); dv.setFloat32(o + 4, q[1], true); dv.setFloat32(o + 8, q[2], true); o += 12; } dv.setUint16(o, 0, true); o += 2; } }
-    const nm = safe(c.name); status('Packing…', 1); await save(nm + '.zip', C.zip([{ name: nm + '.stl', data: new Uint8Array(buf) }]));
-    status(`Exported ${c.name}: ${parts.length} pieces, ${nt.toLocaleString()} triangles, in feet with Z up.`, 1);
+    const parts = c.pieces.map((q, qi) => Object.assign({}, q, { gk: TL.ev && TL.ev.roofCut.has(qi) && geo.has(q.t + '|cut') ? q.t + '|cut' : q.t, n: qi + 1 })).filter((q) => geo.has(q.gk)); let nt = 0;
+    // each piece is its own named object (in feet, Y up here; exportModel turns it Z up in the chosen units)
+    const meshes = parts.map((pc) => { const g = geo.get(pc.gk), P = g.positions, I = g.indices, sc = pc.sc || 1, th = -pc.rot * Math.PI / 2, co = Math.cos(th), si = Math.sin(th), Q = new Float32Array(P.length), J = new Uint32Array(I.length);
+      for (let v = 0; v < P.length; v += 3) { const x = P[v] * (pc.mir ? -1 : 1) * sc, z = P[v + 2] * sc; Q[v] = x * co + z * si + pc.x; Q[v + 1] = P[v + 1] + pc.base * H; Q[v + 2] = -x * si + z * co + pc.z; }
+      for (let t = 0; t < I.length; t += 3) { J[t] = I[t]; J[t + 1] = pc.mir ? I[t + 2] : I[t + 1]; J[t + 2] = pc.mir ? I[t + 1] : I[t + 2]; } nt += I.length / 3;
+      return { name: 'piece_' + pc.n + '_' + safe((refItem(pc.t) || {}).name || 'tile'), positions: Q, indices: J }; });
+    const how = await exportModel(c.name, meshes, clusterPathsFor(c), 'cluster');
+    status(`Exported ${c.name}: ${parts.length} pieces, ${nt.toLocaleString()} triangles · ${how}.`, 1);
   } catch (e) { console.error(e); toast('Export failed: ' + (e.message || e)); } finally { btn.disabled = false; }
 });
 
@@ -5828,7 +5866,9 @@ $('fzUndo').addEventListener('click', () => { const c = fzCluster(); if (!c || !
 $('fzClearEdits').addEventListener('click', () => { const c = fzCluster(); if (!c) return; fzUpdate({ ops: [] }); });
 $('fzBack').addEventListener('click', () => { const c = fzCluster(); if (!c) return; showFuse(false); showTiling(true); openCluster(c.id); });
 $('fzRemove').addEventListener('click', () => { const c = fzCluster(); if (!c) return; c.fz = null; saveCluster(c); FZ.cur = null; fzRefresh(); toast('Removed from Fuse. The cluster itself is unchanged.'); });
-$('fzExport').addEventListener('click', async () => { const c = fzCluster(); if (!c || !FZ.mesh) return; await saveFusedSTL(FZ.mesh, c.name); });
+$('fzExport').addEventListener('click', async () => { const c = fzCluster(); if (!c || !FZ.mesh) return;
+  let paths = null; if ((TL.set.expPaths || 'none') !== 'none') { if (!FZ.paths && FZ.grid) { try { FZ.paths = circulation(FZ.grid, withStoreys(c.pieces), evaluateCluster(c.pieces, byIdFull(), 0), TL.set.H); } catch (e) { console.warn('paths', e); } } paths = FZ.paths ? FZ.paths.paths : null; }
+  const how = await exportModel(c.name + '-fused', [{ name: 'building', positions: FZ.mesh.positions, indices: FZ.mesh.indices }], paths, 'cluster, fused'); status(`Exported ${c.name} · ${how}.`, 1); });
 // brush: click (not drag) on the surface
 { const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(); let down = null;
   const hit = (e) => { const r = fzCanvas.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); ray.setFromCamera(ndc, fzCam); const h = ray.intersectObjects(fzGroup.children, false); return h[0] || null; };
@@ -6141,7 +6181,9 @@ function asmPaths(a, ps, ev) {
 $('asmColor').addEventListener('change', (e) => { AS.color = e.target.value; renderAsmPlan(); renderAsm3D(); });
 $('asmFuse').addEventListener('change', (e) => { AS.fuse = e.target.checked; AS.pathData = null; renderAsm3D(); });
 $('asmPathsChk').addEventListener('change', (e) => { AS.paths = e.target.checked; renderAsm3D(); });
-$('asmExport').addEventListener('click', async () => { const a = asmCur(); if (!a) return; if (!AS.fuse || !AS.mesh) { toast('Tick Fuse first: the export is the assembly as one fused solid.'); return; } await saveFusedSTL(AS.mesh, a.name); });
+$('asmExport').addEventListener('click', async () => { const a = asmCur(); if (!a) return; if (!AS.fuse || !AS.mesh) { toast('Tick Fuse first: the export is the assembly as one fused solid.'); return; }
+  let paths = null; if ((TL.set.expPaths || 'none') !== 'none') { if (!AS.pathData && AS.base) { try { const ps = asmPieces(a); AS.pathData = circulation(AS.base, withStoreys(ps), evaluateCluster(ps, byIdFull(), 0), TL.set.H); } catch (e) { console.warn('paths', e); } } paths = AS.pathData ? AS.pathData.paths : null; }
+  const how = await exportModel(a.name, [{ name: 'building', positions: AS.mesh.positions, indices: AS.mesh.indices }], paths, 'assembly'); status(`Exported ${a.name} · ${how}.`, 1); });
 
 function showAsm(on) {
   if (on && state.running) { toast('Wait for the SOM run to finish.'); return; }
@@ -6151,7 +6193,7 @@ function showAsm(on) {
 }
 
 /* ---------------- boot ---------------- */
-window.__sbs = { get TL() { return TL; }, get REF() { return REF; }, get AS() { return AS; }, prepAll, tileFull, evaluateCluster, asmPieces, asmCur, byIdFull, pSize, fuseCluster, edgeOf, generateFormation, fitsNow, rulesFor, typoPlan, mulberry: (n) => C.mulberry32(n) }; // read-only debugging handle
+window.__sbs = { get TL() { return TL; }, get REF() { return REF; }, get AS() { return AS; }, prepAll, tileFull, evaluateCluster, asmPieces, asmCur, byIdFull, pSize, fuseCluster, edgeOf, generateFormation, fitsNow, rulesFor, typoPlan, mulberry: (n) => C.mulberry32(n), exportModel, pipeMesh }; // read-only debugging handle
 renderCrit(); renderSettings(); renderModels(); renderPicks(); renderInspector(); sizeViewer(); sizeMap();
 if (BUILD) { document.body.classList.add('build'); document.title = 'SubD Blend SOM · Clusters'; showTiling(true); } // the light site skips the SOM map's start-up work
 else { const t0 = store.get('typo', 'gathering'); renderTypoTabs(); switchTypo(TABS.some((t) => t.key === t0) ? t0 : 'gathering').then(preloadAll); }
