@@ -661,7 +661,7 @@ details.sub > .settings { padding-bottom: 6px; }
         <button class="btn small primary" id="asmExport">Export</button></span></h2>
       <canvas id="asmViewer"></canvas>
       <div class="secbar" id="asmSec"></div>
-      <div class="vhint" style="padding:6px 14px 10px">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. Pink is your outline (dashed: the height limit).</div>
+      <div class="vhint" style="padding:6px 14px 10px">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. Click a piece to get the gumball (click empty space or press Esc to let go): drag its arrows to move that cluster anywhere, any height. Pink is your outline (dashed: the height limit).</div>
     </section>
   </div>
 </main>
@@ -1781,7 +1781,7 @@ viewerBg();
 // draw a 3D view only when something moves: while orbiting (and its easing), and otherwise a few times a second to pick up edits.
 // An idle view then costs almost nothing, instead of redrawing 60 times a second.
 function lazyLoop(active, ctl, rr, scene, cam) { let dirty = true, last = 0; ctl.addEventListener('change', () => { dirty = true; });
-  rr.domElement.addEventListener('pointerdown', () => { dirty = true; }); rr.domElement.addEventListener('wheel', () => { dirty = true; }, { passive: true });
+  rr.domElement.addEventListener('pointerdown', () => { dirty = true; }); rr.domElement.addEventListener('pointermove', (e) => { if (e.buttons) dirty = true; }); rr.domElement.addEventListener('wheel', () => { dirty = true; }, { passive: true });
   requestAnimationFrame(function loop(now) { if (active()) { const moved = ctl.update(); if (dirty || moved || now - last > 300) { rr.render(scene, cam); last = now; dirty = false; } } requestAnimationFrame(loop); }); }
 lazyLoop(() => !refineOn && !tilingOn && !fuseOn && !asmOn, controls, vr, vscene, vcam);
 new ResizeObserver(sizeViewer).observe(viewerCanvas);
@@ -4939,7 +4939,7 @@ function fuseSample(F, R, qx, qy, qz) {
 // one piece's signed distance in feet (negative inside) at a world point
 function fusePieceSDF(pc, z, H) { // z = { F, R, k, r, map }
   const m = z.map, uw = z.unwarp || (z.unwarp = fuseUnwarp(m.knots)), ftPer = m.sx * z.k; // feet per full-grid voxel
-  return (X, Y, Z) => { const [lx, lz] = fromWorld(pc, X, Z); const ux = (lx + TILE_FT / 2) / m.sx + m.mn[0], uz = (lz + TILE_FT / 2) / m.sz + m.mn[2], uy = m.mn[1] + uw(Y - pc.base * H) / m.sy;
+  return (X, Y, Z) => { const [lx, lz] = fromWorld(pc, X, Z); const ux = (lx + TILE_FT / 2) / m.sx + m.mn[0], uz = (lz + TILE_FT / 2) / m.sz + m.mn[2], uy = m.mn[1] + uw(Y - pc.base * H - (pc.lift || 0)) / m.sy;
     return fuseSample(z.F, z.R, ux / z.k, uy / z.k, uz / z.k) * z.R * ftPer * (pc.sc || 1); };
 }
 function fuseNets(D, nx, ny, nz, v, ox, oy, oz) {
@@ -4961,7 +4961,7 @@ function fuseNets(D, nx, ny, nz, v, ox, oy, oz) {
 // pieces: cluster pieces; zOf(i) -> sampling data for piece i (or null); ev: evaluateCluster result; opts: { blend, open: 'none'|'blocked'|'touching', H, voxel }
 function fuseCluster(pieces, zOf, ev, opts) {
   const H = opts.H, k = Math.max(0.5, opts.blend || 4), open = opts.open || 'blocked', clear = opts.clear ?? 2, holesMax = opts.holes ?? 80, smoothN = opts.smooth ?? 4;
-  const items = pieces.map((pc, i) => { const z = zOf(i); return z ? { pc, i, f: fusePieceSDF(pc, z, H), top: pc.base * H + z.height + 1, bot: pc.base * H - 2, S: pSize(pc), openBottom: !!z.openBottom } : null; }).filter(Boolean);
+  const items = pieces.map((pc, i) => { const z = zOf(i); return z ? { pc, i, f: fusePieceSDF(pc, z, H), top: pc.base * H + (pc.lift || 0) + z.height + 1, bot: pc.base * H + (pc.lift || 0) - 2, S: pSize(pc), openBottom: !!z.openBottom } : null; }).filter(Boolean);
   if (!items.length) return null;
   const pad = k + 2; let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const q of items) { x0 = Math.min(x0, q.pc.x - q.S / 2); x1 = Math.max(x1, q.pc.x + q.S / 2); z0 = Math.min(z0, q.pc.z - q.S / 2); z1 = Math.max(z1, q.pc.z + q.S / 2); y0 = Math.min(y0, q.bot); y1 = Math.max(y1, q.top); }
@@ -5916,9 +5916,9 @@ function asmPieces(a) {
   const out = []; if (!a) return out; const removed = new Set(a.removed || []);
   (a.parts || []).forEach((part, pi) => { const c = asmCluster(part.cl); if (!c) return; const th = -(part.rot || 0) * Math.PI / 2, co = Math.round(Math.cos(th)), si = Math.round(Math.sin(th));
     c.pieces.forEach((pc, k) => { const key = part.pid + ':' + k; if (removed.has(key)) return;
-      out.push(Object.assign({}, pc, { x: pc.x * co + pc.z * si + part.x, z: -pc.x * si + pc.z * co + part.z, rot: ((pc.rot || 0) + (part.rot || 0)) % 4,
+      out.push(Object.assign({}, pc, { x: pc.x * co + pc.z * si + part.x, z: -pc.x * si + pc.z * co + part.z, rot: ((pc.rot || 0) + (part.rot || 0)) % 4, base: (pc.base || 0) + Math.floor((part.lv || 0) + 1e-6), lift: ((part.lv || 0) - Math.floor((part.lv || 0) + 1e-6)) * TL.set.H, // whole floors for the checks; a free-move height in between is drawn as an offset in feet
         sx: undefined, sz: undefined, slot: undefined, o: { kind: 'cluster', part: pi, pid: part.pid, k, key, cl: c.id, name: c.name, program: c.program, t: pc.t } })); }); });
-  (a.extra || []).forEach((pc, k) => out.push(Object.assign({}, pc, { o: { kind: 'added', k, key: 'x:' + pc.id, t: pc.t, name: 'Connector' } })));
+  (a.extra || []).forEach((pc, k) => { const lv = (pc.base || 0) + (pc.lv || 0), b = Math.floor(lv + 1e-6); out.push(Object.assign({}, pc, { base: b, lift: (lv - b) * TL.set.H, o: { kind: 'added', k, key: 'x:' + pc.id, t: pc.t, name: 'Connector' } })); });
   return out;
 }
 function asmRemovedPieces(a) { const out = []; const rem = new Set(a.removed || []);
@@ -5982,7 +5982,9 @@ function asmStats() {
   for (const id of ['asmRotPiece', 'asmMirPiece', 'asmUp', 'asmDown']) $(id).disabled = !(sel && sel.o.kind === 'added');
   $('asmRemovePart').disabled = !(sel && sel.o.kind === 'cluster');
 }
-function asmRenderAll(rebuild3d) { const a = asmCur(); AS.ev = a ? evaluateCluster(asmPieces(a), byIdFull(), 0) : null; renderAsmList(); renderAsmControls(); renderAsmPlan(); asmStats(); if (rebuild3d !== false) renderAsm3D(); }
+// the walking check should never be able to blank the view: if it fails, draw anyway with an empty result
+function asmEval(ps) { try { return evaluateCluster(ps, byIdFull(), 0); } catch (e) { console.warn('asm check', e); return { roofCut: new Set(), floatIdx: new Set(), reach: ps.map(() => true), seams: [], wroot: ps.map(() => 0), wzones: 1, zones: 1, passages: 0, blocked: 0, overlaps: 0, nowhere: 0 }; } }
+function asmRenderAll(rebuild3d) { const a = asmCur(); AS.ev = a ? asmEval(asmPieces(a)) : null; renderAsmList(); renderAsmControls(); renderAsmPlan(); asmStats(); if (rebuild3d !== false) renderAsm3D(); }
 function renderAsmList() {
   const box = $('asmList'); box.innerHTML = ''; if (!AS.list.length) box.innerHTML = '<p class="note">No assemblies yet.</p>';
   for (const a of AS.list) { const b = document.createElement('button'); b.className = 'clitem' + (a.id === AS.cur ? ' on' : ''); b.innerHTML = `${esc(a.name)}<small>${(a.parts || []).length} clusters</small>`; b.addEventListener('click', () => { AS.cur = a.id; store.set('asmSel', a.id); AS.view = null; AS.sel = null; AS.framed = false; asmRenderAll(); }); box.appendChild(b); }
@@ -6060,8 +6062,8 @@ function confirmDel(name) { return window.confirm ? window.confirm(`Delete ${nam
   aplan.addEventListener('pointerdown', (e) => { const a = asmCur(); if (!a || !AS.view) return; const [px, pz] = pt(e), [wx, wz] = s2a(px, pz);
     if (AS.draw) { if (AS.draw.length >= 3) { const [fx, fz] = a2s(...AS.draw[0]); if (Math.hypot(fx - px, fz - pz) < 12 * (aplan.width / aplan.clientWidth)) { $('asmDraw').click(); return; } } AS.draw.push([Math.round(wx), Math.round(wz)]); renderAsmPlan(); return; }
     const h = hitPiece(wx, wz); if (h) { AS.sel = { key: h.o.key, pid: h.o.pid }; const part = h.o.kind === 'cluster' ? a.parts.find((p) => p.pid === h.o.pid) : a.extra.find((q) => 'x:' + q.id === h.o.key);
-      drag = { kind: 'move', obj: part, sx: wx, sz: wz, ox: part.x, oz: part.z, moved: false }; asmStats(); renderAsmPlan(); }
-    else { AS.sel = null; drag = { kind: 'pan', px, pz, cx: AS.view.cx, cz: AS.view.cz }; asmStats(); renderAsmPlan(); }
+      drag = { kind: 'move', obj: part, sx: wx, sz: wz, ox: part.x, oz: part.z, moved: false }; asmStats(); renderAsmPlan(); asmGumAttach(a, asmPieces(a)); }
+    else { AS.sel = null; drag = { kind: 'pan', px, pz, cx: AS.view.cx, cz: AS.view.cz }; asmStats(); renderAsmPlan(); asmGumAttach(a, asmPieces(a)); } // the 3D gumball follows the plan selection
     aplan.setPointerCapture(e.pointerId); });
   aplan.addEventListener('pointermove', (e) => { if (!drag) return; const [px, pz] = pt(e);
     if (drag.kind === 'pan') { AS.view.cx = drag.cx - (px - drag.px) / AS.view.s; AS.view.cz = drag.cz - (pz - drag.pz) / AS.view.s; renderAsmPlan(); return; }
@@ -6155,18 +6157,58 @@ lazyLoop(() => asmOn, asmCtl, asmr, asmScene, asmCam);
 function asmFrame() { const box = new THREE.Box3().setFromObject(asmGroup); if (box.isEmpty()) return; const c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length() / 2;
   const dir = new THREE.Vector3(0.55, 0.55, 0.63).normalize(), dist = r / Math.sin(THREE.MathUtils.degToRad(asmCam.fov / 2)) * 0.95; asmCtl.target.copy(c); asmCam.position.copy(c).addScaledVector(dir, dist); asmCam.near = dist / 100; asmCam.far = dist * 20; asmCam.updateProjectionMatrix(); asmCtl.update(); AS.framed = true; }
 asmCanvas.addEventListener('dblclick', asmFrame);
+/* --- gumball: move the selected cluster (or connector) sideways and up/down in the 3D view. Plan moves snap to 1 ft, height to whole levels --- */
+// the gumball loads on its own: if it can't be fetched, the 3D view still works without it
+let asmGum = { attach() {}, detach() {}, dragging: false, axis: null, object: null, camera: asmCam };
+const asmGumObj = new THREE.Object3D(); asmScene.add(asmGumObj);
+import('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/TransformControls.js').then(({ TransformControls }) => { const g = new TransformControls(asmCam, asmCanvas); g.setSize(0.9); asmScene.add(g); asmGum = g; asmGumWire(g); if (asmOn) renderAsm3D(); })
+  .catch((e) => console.warn('gumball unavailable', e));
+AS.snap = false; // the gumball moves freely (any position, any height)
+const asmGumKey = (o) => (o ? (o.kind === 'cluster' ? 'p:' + o.pid : o.key) : '');
+function asmGumTarget(a) { if (!a || !AS.sel) return null; const s = asmSelPiece(); if (!s) return null; const gk = asmGumKey(s.o);
+  if (s.o.kind === 'cluster') { const part = a.parts.find((p) => p.pid === s.o.pid); return part ? { gk, kind: 'part', ref: part, x: part.x, z: part.z, y: (part.lv || 0) * TL.set.H } : null; }
+  const q = (a.extra || []).find((x) => 'x:' + x.id === s.o.key); return q ? { gk, kind: 'extra', ref: q, x: q.x, z: q.z, y: ((q.base || 0) + (q.lv || 0)) * TL.set.H } : null; }
+function asmGumAttach(a, ps) { const t = asmGumTarget(a); if (!t) { asmGum.detach(); return; }
+  // the handle sits at the middle of the cluster's footprint, on its lowest floor
+  const mine = ps.filter((q) => asmGumKey(q.o) === t.gk); const cx = mine.reduce((n, q) => n + q.x, 0) / Math.max(1, mine.length), cz = mine.reduce((n, q) => n + q.z, 0) / Math.max(1, mine.length), cy = Math.min(...mine.map((q) => q.base * TL.set.H + (q.lift || 0)));
+  AS.gum = Object.assign(t, { cx, cz, cy }); asmGumObj.position.set(cx, cy, cz); asmGumObj.updateMatrixWorld(); asmGum.attach(asmGumObj); }
+// Esc lets go of the selection (and the gumball)
+document.addEventListener('keydown', (e) => { if (e.key !== 'Escape' || !asmOn || !AS.sel || (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName))) return; AS.sel = null; asmRenderAll(); });
+function asmGumWire(asmGum) {
+asmGum.addEventListener('dragging-changed', (e) => { asmCtl.enabled = !e.value; const g = AS.gum, a = asmCur(); if (!g || !a) return;
+  if (e.value) { AS.gumDrag = true; renderAsm3D(); return; }
+  // release: write the move into the assembly (and fuse again)
+  const H = TL.set.H, rnd = (v) => (AS.snap ? Math.round(v) : Math.round(v * 10) / 10), dx = rnd(asmGumObj.position.x - g.cx), dz = rnd(asmGumObj.position.z - g.cz), dl = AS.snap ? Math.round((asmGumObj.position.y - g.cy) / H) : Math.round((asmGumObj.position.y - g.cy) / H * 1000) / 1000; // free: lift in fractions of a level
+  g.ref.x = g.x + dx; g.ref.z = g.z + dz; g.ref.lv = Math.max(-(g.kind === 'part' ? 0 : (g.ref.base || 0)), (g.ref.lv || 0) + dl); // height kept as levels (fractions allowed); checks use whole floors
+  AS.gumDrag = false; saveAsm(a); asmRenderAll(); const up = Math.abs(dl);
+  status(`Moved ${g.kind === 'part' ? 'the cluster' : 'the connector'}${dx || dz ? ` ${+Math.hypot(dx, dz).toFixed(1)} ft across` : ''}${dl ? `, ${dl > 0 ? 'up' : 'down'} ${AS.snap ? up + ' level' + (up > 1 ? 's' : '') : +(up * H).toFixed(1) + ' ft'}` : ''}${AS.snap ? '' : ' (free move)'}.`, 1); });
+asmGum.addEventListener('objectChange', () => { const g = AS.gum; if (!g) return; const H = TL.set.H;
+  asmGumObj.position.y = AS.snap ? Math.max(0, g.cy + Math.round((asmGumObj.position.y - g.cy) / H) * H) : Math.max(0, asmGumObj.position.y); // snap: whole levels; free: any height; never below the ground
+  const r = (v) => (AS.snap ? Math.round(v) : v), dx = r(asmGumObj.position.x - g.cx), dz = r(asmGumObj.position.z - g.cz), dy = asmGumObj.position.y - g.cy;
+  asmGroup.children.forEach((m) => { if (m.userData.gk === g.gk) { if (!m.userData.p0) m.userData.p0 = m.position.clone(); m.position.set(m.userData.p0.x + dx, m.userData.p0.y + dy, m.userData.p0.z + dz); } }); });
+}
+// click a piece in 3D to select its cluster (a drag orbits as before)
+{ let down = null; const ray = new THREE.Raycaster();
+  asmCanvas.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; });
+  asmCanvas.addEventListener('pointerup', (e) => { if (!down || asmGum.dragging || asmGum.axis || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 8) return; // a click (a little wobble allowed), not an orbit or a gumball grab const a = asmCur(); if (!a) return;
+    const r = asmCanvas.getBoundingClientRect(); ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), asmCam);
+    const hit = ray.intersectObjects(asmGroup.children.filter((m) => m.isMesh), false)[0]; if (!hit) { if (AS.sel) { AS.sel = null; asmRenderAll(); } return; }
+    const ps = asmPieces(a), H = TL.set.H, p = hit.point; let best = null, bd = Infinity; // the piece whose box holds (or is nearest) the point hit
+    for (const q of ps) { const S = pSize(q) / 2, top = (q.base + (q.storeys || 2)) * H, d = Math.max(Math.abs(p.x - q.x) - S, 0) + Math.max(Math.abs(p.z - q.z) - S, 0) + Math.max(q.base * H - p.y, p.y - top, 0); if (d < bd) { bd = d; best = q; } }
+    if (best) { AS.sel = { key: best.o.key, pid: best.o.pid }; asmRenderAll(); } }); }
 function asmClearGroup() { while (asmGroup.children.length) { const o = asmGroup.children.pop(); o.traverse && o.traverse((m) => { if (m.isMesh && m.userData.own) { m.geometry.dispose(); } }); } }
 function renderAsm3D() {
   if (!asmOn) return; asmClearGroup(); const a = asmCur(); if (!a) return; const ps = asmPieces(a), H = TL.set.H; if (!ps.length) return;
-  const ev = AS.ev || evaluateCluster(ps, byIdFull(), 0);
-  if (AS.fuse) { const g = asmFuseRequest(a, ps, ev); if (g) { const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0, side: THREE.DoubleSide })); asmGroup.add(m); } }
-  if (!AS.fuse || !AS.fusedReady) ps.forEach((pc, i) => { const f = refItem(pc.t) ? tileFeetFor(pc.t) : null; if (!f) return; const sc = pc.sc || 1;
+  const ev = AS.ev || asmEval(ps);
+  const drag = AS.gumDrag; // while the gumball is dragged, show the plain pieces (fast) and fuse again on release
+  if (AS.fuse && !drag) { const g = asmFuseRequest(a, ps, ev); if (g) { const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0, side: THREE.DoubleSide })); asmGroup.add(m); } }
+  if (!AS.fuse || !AS.fusedReady || drag) ps.forEach((pc, i) => { const f = refItem(pc.t) ? tileFeetFor(pc.t) : null; if (!f) return; const sc = pc.sc || 1;
     const col = new THREE.Color(asmColor(pc.o)).lerp(new THREE.Color(0xdedbd5), 0.35), m = new THREE.Mesh(ev.roofCut && ev.roofCut.has(i) && f.cutGeom ? f.cutGeom : f.geom, new THREE.MeshStandardMaterial({ color: col, roughness: 0.75, metalness: 0, side: THREE.DoubleSide }));
-    m.scale.set(pc.mir ? -sc : sc, 1, sc); m.rotation.y = -pc.rot * Math.PI / 2; m.position.set(pc.x, pc.base * H, pc.z); asmGroup.add(m); });
+    m.scale.set(pc.mir ? -sc : sc, 1, sc); m.rotation.y = -pc.rot * Math.PI / 2; m.position.set(pc.x, pc.base * H + (pc.lift || 0), pc.z); m.userData.gk = asmGumKey(pc.o); asmGroup.add(m); });
   if (a.outline && a.outline.length >= 3) { const pts = a.outline.concat([a.outline[0]]).map(([x, z]) => new THREE.Vector3(x, 0.05, z)); asmGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xe2589a })));
     if (a.height > 0) { const top = pts.map((p) => new THREE.Vector3(p.x, a.height, p.z)); asmGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(top), new THREE.LineDashedMaterial({ color: 0xe2589a, dashSize: 3, gapSize: 2 })).computeLineDistances()); } }
   if (AS.paths) asmPaths(a, ps, ev);
-  applySection(asmGroup, asmSecSt); if (!AS.framed) asmFrame();
+  applySection(asmGroup, asmSecSt); if (!AS.framed) asmFrame(); if (!drag) { try { asmGumAttach(a, ps); } catch (e) { console.warn('gumball', e); } }
 }
 function asmSig(a, ps, voxel) { return JSON.stringify([ps.map((q) => [q.t, q.x, q.z, q.rot, !!q.mir, q.sc || 1, q.base]), TL.set.H, TILE_FT, voxel, a.fz || {}, REF.items.map((it) => it.id + tileSig(it)).join()]); }
 function asmZOf(ps, ev) { const zs = new Map(); return (i) => { const pc = ps[i]; if (!refItem(pc.t)) return null; const cut = !!(ev.roofCut && ev.roofCut.has(i)), key = pc.t + (cut ? '|c' : ''); if (!zs.has(key)) zs.set(key, fuseDataFor(pc.t, cut)); return zs.get(key); }; }
@@ -6206,7 +6248,7 @@ function showAsm(on) {
 }
 
 /* ---------------- boot ---------------- */
-window.__sbs = { get TL() { return TL; }, get REF() { return REF; }, get AS() { return AS; }, prepAll, tileFull, evaluateCluster, asmPieces, asmCur, byIdFull, pSize, fuseCluster, edgeOf, generateFormation, fitsNow, rulesFor, typoPlan, mulberry: (n) => C.mulberry32(n), exportModel, pipeMesh }; // read-only debugging handle
+window.__sbs = { get TL() { return TL; }, get REF() { return REF; }, get AS() { return AS; }, prepAll, tileFull, evaluateCluster, asmPieces, asmCur, byIdFull, pSize, fuseCluster, edgeOf, generateFormation, fitsNow, rulesFor, typoPlan, mulberry: (n) => C.mulberry32(n), exportModel, pipeMesh, get asmGum() { return asmGum; }, get asmGumObj() { return asmGumObj; } }; // read-only debugging handle
 renderCrit(); renderSettings(); renderModels(); renderPicks(); renderInspector(); sizeViewer(); sizeMap();
 if (BUILD) { document.body.classList.add('build'); document.title = 'SubD Blend SOM · Clusters'; showTiling(true); } // the light site skips the SOM map's start-up work
 else { const t0 = store.get('typo', 'gathering'); renderTypoTabs(); switchTypo(TABS.some((t) => t.key === t0) ? t0 : 'gathering').then(preloadAll); }
