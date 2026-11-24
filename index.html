@@ -657,11 +657,11 @@ details.sub > .settings { padding-bottom: 6px; }
     </section>
     <section class="panel">
       <h2>3D <span class="actions" style="margin:0"><select id="asmColor" aria-label="Colour by"><option value="cluster">Colour by cluster</option><option value="program">Colour by program</option><option value="model">Colour by original model</option></select>
-        <label class="note" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="asmFuse"> Fuse</label><label class="note" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="asmPathsChk"> Paths</label>
+        <label class="note" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="asmFuse"> Fuse</label><label class="note" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="asmPathsChk"> Paths</label><label class="note" style="margin:0;display:flex;gap:6px;align-items:center" title="Gumball: ticked = 1 ft steps and whole floors; unticked = free move to any position and height"><input type="checkbox" id="asmSnap" checked> Snap to floors</label>
         <button class="btn small primary" id="asmExport">Export</button></span></h2>
       <canvas id="asmViewer"></canvas>
       <div class="secbar" id="asmSec"></div>
-      <div class="vhint" style="padding:6px 14px 10px">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. Click a piece to get the gumball: drag its arrows to move that cluster (height snaps to whole levels). Pink is your outline (dashed: the height limit).</div>
+      <div class="vhint" style="padding:6px 14px 10px">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. Click a piece to get the gumball: drag its arrows to move that cluster (Snap to floors keeps whole levels; untick it to move freely). Pink is your outline (dashed: the height limit).</div>
     </section>
   </div>
 </main>
@@ -6158,6 +6158,7 @@ function asmFrame() { const box = new THREE.Box3().setFromObject(asmGroup); if (
 asmCanvas.addEventListener('dblclick', asmFrame);
 /* --- gumball: move the selected cluster (or connector) sideways and up/down in the 3D view. Plan moves snap to 1 ft, height to whole levels --- */
 const asmGum = new TransformControls(asmCam, asmCanvas); asmGum.setSize(0.9); asmScene.add(asmGum); const asmGumObj = new THREE.Object3D(); asmScene.add(asmGumObj);
+AS.snap = store.get('asmSnap', true) !== false; $('asmSnap').checked = AS.snap; $('asmSnap').addEventListener('change', (e) => { AS.snap = e.target.checked; store.set('asmSnap', AS.snap); });
 const asmGumKey = (o) => (o ? (o.kind === 'cluster' ? 'p:' + o.pid : o.key) : '');
 function asmGumTarget(a) { if (!a || !AS.sel) return null; const s = asmSelPiece(); if (!s) return null; const gk = asmGumKey(s.o);
   if (s.o.kind === 'cluster') { const part = a.parts.find((p) => p.pid === s.o.pid); return part ? { gk, kind: 'part', ref: part, x: part.x, z: part.z, y: (part.lv || 0) * TL.set.H } : null; }
@@ -6169,12 +6170,13 @@ function asmGumAttach(a, ps) { const t = asmGumTarget(a); if (!t) { asmGum.detac
 asmGum.addEventListener('dragging-changed', (e) => { asmCtl.enabled = !e.value; const g = AS.gum, a = asmCur(); if (!g || !a) return;
   if (e.value) { AS.gumDrag = true; renderAsm3D(); return; }
   // release: write the move into the assembly (and fuse again)
-  const H = TL.set.H, dx = Math.round(asmGumObj.position.x - g.cx), dz = Math.round(asmGumObj.position.z - g.cz), dl = Math.round((asmGumObj.position.y - g.cy) / H);
+  const H = TL.set.H, rnd = (v) => (AS.snap ? Math.round(v) : Math.round(v * 10) / 10), dx = rnd(asmGumObj.position.x - g.cx), dz = rnd(asmGumObj.position.z - g.cz), dl = AS.snap ? Math.round((asmGumObj.position.y - g.cy) / H) : Math.round((asmGumObj.position.y - g.cy) / H * 1000) / 1000; // free: lift in fractions of a level
   g.ref.x = g.x + dx; g.ref.z = g.z + dz; if (g.kind === 'part') g.ref.lv = Math.max(0, (g.ref.lv || 0) + dl); else g.ref.base = Math.max(0, (g.ref.base || 0) + dl);
-  AS.gumDrag = false; saveAsm(a); asmRenderAll(); status(`Moved ${g.kind === 'part' ? 'the cluster' : 'the connector'}${dx || dz ? ` ${Math.round(Math.hypot(dx, dz))} ft across` : ''}${dl ? `, ${dl > 0 ? 'up' : 'down'} ${Math.abs(dl)} level${Math.abs(dl) > 1 ? 's' : ''}` : ''}.`, 1); });
+  AS.gumDrag = false; saveAsm(a); asmRenderAll(); const up = Math.abs(dl);
+  status(`Moved ${g.kind === 'part' ? 'the cluster' : 'the connector'}${dx || dz ? ` ${+Math.hypot(dx, dz).toFixed(1)} ft across` : ''}${dl ? `, ${dl > 0 ? 'up' : 'down'} ${AS.snap ? up + ' level' + (up > 1 ? 's' : '') : +(up * H).toFixed(1) + ' ft'}` : ''}${AS.snap ? '' : ' (free move)'}.`, 1); });
 asmGum.addEventListener('objectChange', () => { const g = AS.gum; if (!g) return; const H = TL.set.H;
-  asmGumObj.position.y = Math.max(0, g.cy + Math.round((asmGumObj.position.y - g.cy) / H) * H) ; // height snaps to whole levels, never below the ground
-  const dx = Math.round(asmGumObj.position.x - g.cx), dz = Math.round(asmGumObj.position.z - g.cz), dy = asmGumObj.position.y - g.cy;
+  asmGumObj.position.y = AS.snap ? Math.max(0, g.cy + Math.round((asmGumObj.position.y - g.cy) / H) * H) : Math.max(0, asmGumObj.position.y); // snap: whole levels; free: any height; never below the ground
+  const r = (v) => (AS.snap ? Math.round(v) : v), dx = r(asmGumObj.position.x - g.cx), dz = r(asmGumObj.position.z - g.cz), dy = asmGumObj.position.y - g.cy;
   asmGroup.children.forEach((m) => { if (m.userData.gk === g.gk) { if (!m.userData.p0) m.userData.p0 = m.position.clone(); m.position.set(m.userData.p0.x + dx, m.userData.p0.y + dy, m.userData.p0.z + dz); } }); });
 // click a piece in 3D to select its cluster (a drag orbits as before)
 { let down = null; const ray = new THREE.Raycaster();
