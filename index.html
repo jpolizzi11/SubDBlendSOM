@@ -4939,7 +4939,7 @@ function fuseSample(F, R, qx, qy, qz) {
 // one piece's signed distance in feet (negative inside) at a world point
 function fusePieceSDF(pc, z, H) { // z = { F, R, k, r, map }
   const m = z.map, uw = z.unwarp || (z.unwarp = fuseUnwarp(m.knots)), ftPer = m.sx * z.k; // feet per full-grid voxel
-  return (X, Y, Z) => { const [lx, lz] = fromWorld(pc, X, Z); const ux = (lx + TILE_FT / 2) / m.sx + m.mn[0], uz = (lz + TILE_FT / 2) / m.sz + m.mn[2], uy = m.mn[1] + uw(Y - pc.base * H) / m.sy;
+  return (X, Y, Z) => { const [lx, lz] = fromWorld(pc, X, Z); const ux = (lx + TILE_FT / 2) / m.sx + m.mn[0], uz = (lz + TILE_FT / 2) / m.sz + m.mn[2], uy = m.mn[1] + uw(Y - pc.base * H - (pc.lift || 0)) / m.sy;
     return fuseSample(z.F, z.R, ux / z.k, uy / z.k, uz / z.k) * z.R * ftPer * (pc.sc || 1); };
 }
 function fuseNets(D, nx, ny, nz, v, ox, oy, oz) {
@@ -4961,7 +4961,7 @@ function fuseNets(D, nx, ny, nz, v, ox, oy, oz) {
 // pieces: cluster pieces; zOf(i) -> sampling data for piece i (or null); ev: evaluateCluster result; opts: { blend, open: 'none'|'blocked'|'touching', H, voxel }
 function fuseCluster(pieces, zOf, ev, opts) {
   const H = opts.H, k = Math.max(0.5, opts.blend || 4), open = opts.open || 'blocked', clear = opts.clear ?? 2, holesMax = opts.holes ?? 80, smoothN = opts.smooth ?? 4;
-  const items = pieces.map((pc, i) => { const z = zOf(i); return z ? { pc, i, f: fusePieceSDF(pc, z, H), top: pc.base * H + z.height + 1, bot: pc.base * H - 2, S: pSize(pc), openBottom: !!z.openBottom } : null; }).filter(Boolean);
+  const items = pieces.map((pc, i) => { const z = zOf(i); return z ? { pc, i, f: fusePieceSDF(pc, z, H), top: pc.base * H + (pc.lift || 0) + z.height + 1, bot: pc.base * H + (pc.lift || 0) - 2, S: pSize(pc), openBottom: !!z.openBottom } : null; }).filter(Boolean);
   if (!items.length) return null;
   const pad = k + 2; let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const q of items) { x0 = Math.min(x0, q.pc.x - q.S / 2); x1 = Math.max(x1, q.pc.x + q.S / 2); z0 = Math.min(z0, q.pc.z - q.S / 2); z1 = Math.max(z1, q.pc.z + q.S / 2); y0 = Math.min(y0, q.bot); y1 = Math.max(y1, q.top); }
@@ -5916,7 +5916,7 @@ function asmPieces(a) {
   const out = []; if (!a) return out; const removed = new Set(a.removed || []);
   (a.parts || []).forEach((part, pi) => { const c = asmCluster(part.cl); if (!c) return; const th = -(part.rot || 0) * Math.PI / 2, co = Math.round(Math.cos(th)), si = Math.round(Math.sin(th));
     c.pieces.forEach((pc, k) => { const key = part.pid + ':' + k; if (removed.has(key)) return;
-      out.push(Object.assign({}, pc, { x: pc.x * co + pc.z * si + part.x, z: -pc.x * si + pc.z * co + part.z, rot: ((pc.rot || 0) + (part.rot || 0)) % 4, base: (pc.base || 0) + (part.lv || 0),
+      out.push(Object.assign({}, pc, { x: pc.x * co + pc.z * si + part.x, z: -pc.x * si + pc.z * co + part.z, rot: ((pc.rot || 0) + (part.rot || 0)) % 4, base: (pc.base || 0) + Math.floor((part.lv || 0) + 1e-6), lift: ((part.lv || 0) - Math.floor((part.lv || 0) + 1e-6)) * TL.set.H, // whole floors for the checks; a free-move height in between is drawn as an offset in feet
         sx: undefined, sz: undefined, slot: undefined, o: { kind: 'cluster', part: pi, pid: part.pid, k, key, cl: c.id, name: c.name, program: c.program, t: pc.t } })); }); });
   (a.extra || []).forEach((pc, k) => out.push(Object.assign({}, pc, { o: { kind: 'added', k, key: 'x:' + pc.id, t: pc.t, name: 'Connector' } })));
   return out;
@@ -5982,7 +5982,9 @@ function asmStats() {
   for (const id of ['asmRotPiece', 'asmMirPiece', 'asmUp', 'asmDown']) $(id).disabled = !(sel && sel.o.kind === 'added');
   $('asmRemovePart').disabled = !(sel && sel.o.kind === 'cluster');
 }
-function asmRenderAll(rebuild3d) { const a = asmCur(); AS.ev = a ? evaluateCluster(asmPieces(a), byIdFull(), 0) : null; renderAsmList(); renderAsmControls(); renderAsmPlan(); asmStats(); if (rebuild3d !== false) renderAsm3D(); }
+// the walking check should never be able to blank the view: if it fails, draw anyway with an empty result
+function asmEval(ps) { try { return evaluateCluster(ps, byIdFull(), 0); } catch (e) { console.warn('asm check', e); return { roofCut: new Set(), floatIdx: new Set(), reach: ps.map(() => true), seams: [], wroot: ps.map(() => 0), wzones: 1, zones: 1, passages: 0, blocked: 0, overlaps: 0, nowhere: 0 }; } }
+function asmRenderAll(rebuild3d) { const a = asmCur(); AS.ev = a ? asmEval(asmPieces(a)) : null; renderAsmList(); renderAsmControls(); renderAsmPlan(); asmStats(); if (rebuild3d !== false) renderAsm3D(); }
 function renderAsmList() {
   const box = $('asmList'); box.innerHTML = ''; if (!AS.list.length) box.innerHTML = '<p class="note">No assemblies yet.</p>';
   for (const a of AS.list) { const b = document.createElement('button'); b.className = 'clitem' + (a.id === AS.cur ? ' on' : ''); b.innerHTML = `${esc(a.name)}<small>${(a.parts || []).length} clusters</small>`; b.addEventListener('click', () => { AS.cur = a.id; store.set('asmSel', a.id); AS.view = null; AS.sel = null; AS.framed = false; asmRenderAll(); }); box.appendChild(b); }
@@ -6168,7 +6170,7 @@ function asmGumTarget(a) { if (!a || !AS.sel) return null; const s = asmSelPiece
   const q = (a.extra || []).find((x) => 'x:' + x.id === s.o.key); return q ? { gk, kind: 'extra', ref: q, x: q.x, z: q.z, y: (q.base || 0) * TL.set.H } : null; }
 function asmGumAttach(a, ps) { const t = asmGumTarget(a); if (!t) { asmGum.detach(); return; }
   // the handle sits at the middle of the cluster's footprint, on its lowest floor
-  const mine = ps.filter((q) => asmGumKey(q.o) === t.gk); const cx = mine.reduce((n, q) => n + q.x, 0) / Math.max(1, mine.length), cz = mine.reduce((n, q) => n + q.z, 0) / Math.max(1, mine.length), cy = Math.min(...mine.map((q) => q.base)) * TL.set.H;
+  const mine = ps.filter((q) => asmGumKey(q.o) === t.gk); const cx = mine.reduce((n, q) => n + q.x, 0) / Math.max(1, mine.length), cz = mine.reduce((n, q) => n + q.z, 0) / Math.max(1, mine.length), cy = Math.min(...mine.map((q) => q.base * TL.set.H + (q.lift || 0)));
   AS.gum = Object.assign(t, { cx, cz, cy }); asmGumObj.position.set(cx, cy, cz); asmGumObj.updateMatrixWorld(); asmGum.attach(asmGumObj); }
 // Esc lets go of the selection (and the gumball)
 document.addEventListener('keydown', (e) => { if (e.key !== 'Escape' || !asmOn || !AS.sel || (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName))) return; AS.sel = null; asmRenderAll(); });
@@ -6197,12 +6199,12 @@ asmGum.addEventListener('objectChange', () => { const g = AS.gum; if (!g) return
 function asmClearGroup() { while (asmGroup.children.length) { const o = asmGroup.children.pop(); o.traverse && o.traverse((m) => { if (m.isMesh && m.userData.own) { m.geometry.dispose(); } }); } }
 function renderAsm3D() {
   if (!asmOn) return; asmClearGroup(); const a = asmCur(); if (!a) return; const ps = asmPieces(a), H = TL.set.H; if (!ps.length) return;
-  const ev = AS.ev || evaluateCluster(ps, byIdFull(), 0);
+  const ev = AS.ev || asmEval(ps);
   const drag = AS.gumDrag; // while the gumball is dragged, show the plain pieces (fast) and fuse again on release
   if (AS.fuse && !drag) { const g = asmFuseRequest(a, ps, ev); if (g) { const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0, side: THREE.DoubleSide })); asmGroup.add(m); } }
   if (!AS.fuse || !AS.fusedReady || drag) ps.forEach((pc, i) => { const f = refItem(pc.t) ? tileFeetFor(pc.t) : null; if (!f) return; const sc = pc.sc || 1;
     const col = new THREE.Color(asmColor(pc.o)).lerp(new THREE.Color(0xdedbd5), 0.35), m = new THREE.Mesh(ev.roofCut && ev.roofCut.has(i) && f.cutGeom ? f.cutGeom : f.geom, new THREE.MeshStandardMaterial({ color: col, roughness: 0.75, metalness: 0, side: THREE.DoubleSide }));
-    m.scale.set(pc.mir ? -sc : sc, 1, sc); m.rotation.y = -pc.rot * Math.PI / 2; m.position.set(pc.x, pc.base * H, pc.z); m.userData.gk = asmGumKey(pc.o); asmGroup.add(m); });
+    m.scale.set(pc.mir ? -sc : sc, 1, sc); m.rotation.y = -pc.rot * Math.PI / 2; m.position.set(pc.x, pc.base * H + (pc.lift || 0), pc.z); m.userData.gk = asmGumKey(pc.o); asmGroup.add(m); });
   if (a.outline && a.outline.length >= 3) { const pts = a.outline.concat([a.outline[0]]).map(([x, z]) => new THREE.Vector3(x, 0.05, z)); asmGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xe2589a })));
     if (a.height > 0) { const top = pts.map((p) => new THREE.Vector3(p.x, a.height, p.z)); asmGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(top), new THREE.LineDashedMaterial({ color: 0xe2589a, dashSize: 3, gapSize: 2 })).computeLineDistances()); } }
   if (AS.paths) asmPaths(a, ps, ev);
