@@ -648,7 +648,7 @@ details.sub > .settings { padding-bottom: 6px; }
       <div class="mapwrap"><canvas id="asmPlan" aria-label="Assembly plan"></canvas></div>
       <div class="pad" style="padding-top:0">
         <div class="actions" style="margin-top:0">
-          <button class="btn small" id="asmRotPart">Rotate cluster 90°</button><button class="btn small" id="asmRemovePart">Take cluster out</button><button class="btn small" id="asmRemovePiece">Remove piece</button>
+          <button class="btn small" id="asmRotPart">Rotate cluster 90°</button><button class="btn small" id="asmRemovePart">Take cluster out</button><button class="btn small" id="asmDelPiece" title="Removes the piece from the original cluster: the Clusters tab and every assembly using it change too">Delete from cluster</button><button class="btn small" id="asmUndoDel" hidden>Undo delete</button><button class="btn small" id="asmRemovePiece" title="Hides the piece in this assembly only; the original cluster keeps it">Hide here only</button>
           <button class="btn small" id="asmRotPiece">Rotate connector</button><button class="btn small" id="asmMirPiece">Mirror connector</button><button class="btn small" id="asmUp">Up a level</button><button class="btn small" id="asmDown">Down a level</button>
         </div>
         <p class="note" id="asmSelInfo"></p>
@@ -5977,7 +5977,7 @@ function asmStats() {
   const sel = AS.sel && ps.find((q) => q.o.key === AS.sel.key);
   $('asmSelInfo').textContent = sel ? `${sel.o.kind === 'added' ? 'Connector' : sel.o.name} · ${(refItem(sel.t) || {}).name || sel.t}${sel.base ? ' · level ' + (sel.base + 1) : ''}. ${sel.o.kind === 'added' ? 'Drag to move it.' : 'Drag to move the whole cluster.'}` : 'Click a piece to select it (and its cluster). Drag to move · scroll to zoom · drag empty space to pan.';
   for (const id of ['asmRotPart']) $(id).disabled = !(sel && sel.o.kind === 'cluster');
-  $('asmRemovePiece').disabled = !sel; $('asmRemovePiece').textContent = sel && sel.o.kind === 'added' ? 'Delete connector' : 'Remove piece';
+  $('asmRemovePiece').disabled = !sel; $('asmRemovePiece').textContent = sel && sel.o.kind === 'added' ? 'Delete connector' : 'Hide here only'; $('asmDelPiece').disabled = !(sel && sel.o.kind === 'cluster'); $('asmUndoDel').hidden = !AS.undoDel;
   for (const id of ['asmRotPiece', 'asmMirPiece', 'asmUp', 'asmDown']) $(id).disabled = !(sel && sel.o.kind === 'added');
   $('asmRemovePart').disabled = !(sel && sel.o.kind === 'cluster');
 }
@@ -6019,6 +6019,18 @@ $('asmRotPart').addEventListener('click', () => { const a = asmCur(), s = asmSel
 $('asmRemovePiece').addEventListener('click', () => { const a = asmCur(), s = asmSelPiece(); if (!a || !s) return;
   if (s.o.kind === 'added') a.extra = a.extra.filter((q) => 'x:' + q.id !== s.o.key); else a.removed = (a.removed || []).concat([s.o.key]); AS.sel = null; saveAsm(a); asmRenderAll(); });
 $('asmRemovePart').addEventListener('click', () => { const a = asmCur(), s = asmSelPiece(); if (!a || !s || s.o.kind !== 'cluster') return; a.parts = a.parts.filter((p) => p.pid !== s.o.pid); a.removed = (a.removed || []).filter((k) => !k.startsWith(s.o.pid + ':')); AS.sel = null; saveAsm(a); asmRenderAll(); });
+// delete a piece from its original cluster: the cluster changes for everyone, and every assembly using it keeps pointing at the right pieces
+// (pieces are keyed by their number in the cluster, so later numbers shift down by one)
+function asmRemap(clId, k, dir) { const touched = []; for (const A of AS.list) { const pids = new Set((A.parts || []).filter((p) => p.cl === clId).map((p) => p.pid)); if (!pids.size || !(A.removed || []).length) continue; const before = A.removed.slice();
+    A.removed = A.removed.flatMap((key) => { const [pid, j] = key.split(':'); if (!pids.has(pid)) return [key]; const n = +j; if (dir < 0) return n === k ? [] : [pid + ':' + (n > k ? n - 1 : n)]; return [pid + ':' + (n >= k ? n + 1 : n)]; });
+    if (before.join() !== A.removed.join()) touched.push([A, before]); } return touched; }
+$('asmDelPiece').addEventListener('click', () => { const a = asmCur(), s = asmSelPiece(); if (!a || !s || s.o.kind !== 'cluster') return; const c = asmCluster(s.o.cl); if (!c || !c.pieces[s.o.k]) return;
+  const pc = c.pieces[s.o.k], k = s.o.k, touched = asmRemap(c.id, k, -1); c.pieces.splice(k, 1); saveCluster(c); for (const [A] of touched) saveAsm(A);
+  AS.undoDel = { cl: c.id, k, pc, before: touched.map(([A, b]) => [A.id, b]) }; AS.sel = null; asmRenderAll(); if (typeof TL !== 'undefined' && TL.cur === c.id && tilingOn) renderAll();
+  status(`Deleted piece ${k + 1} from the cluster "${c.name}" · the cluster and every assembly using it are updated.`, 1); });
+$('asmUndoDel').addEventListener('click', () => { const u = AS.undoDel; if (!u) return; const c = asmCluster(u.cl); if (!c) { AS.undoDel = null; asmRenderAll(); return; }
+  c.pieces.splice(Math.min(u.k, c.pieces.length), 0, u.pc); saveCluster(c); for (const [id, before] of u.before) { const A = AS.list.find((x) => x.id === id); if (A) { A.removed = before; saveAsm(A); } }
+  AS.undoDel = null; asmRenderAll(); status(`Put the piece back in "${c.name}".`, 1); });
 $('asmRestore').addEventListener('click', () => { const a = asmCur(); if (!a) return; a.removed = []; saveAsm(a); asmRenderAll(); toast('All removed pieces are back.'); });
 $('asmTrim').addEventListener('click', () => { const a = asmCur(); if (!a) return; const ps = asmPieces(a), fl = asmFlags(a, ps); let n = 0;
   for (const q of ps) if (fl.out.has(q.o.key) || fl.high.has(q.o.key)) { n++; if (q.o.kind === 'added') a.extra = a.extra.filter((x) => 'x:' + x.id !== q.o.key); else a.removed = (a.removed || []).concat([q.o.key]); }
