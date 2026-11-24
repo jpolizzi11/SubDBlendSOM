@@ -1643,7 +1643,6 @@ if (typeof module !== 'undefined') module.exports = decodeSBM2;
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
-import { TransformControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/TransformControls.js';
 import { STLLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/STLLoader.js';
 import { OBJLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/OBJLoader.js';
 import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
@@ -6157,7 +6156,11 @@ function asmFrame() { const box = new THREE.Box3().setFromObject(asmGroup); if (
   const dir = new THREE.Vector3(0.55, 0.55, 0.63).normalize(), dist = r / Math.sin(THREE.MathUtils.degToRad(asmCam.fov / 2)) * 0.95; asmCtl.target.copy(c); asmCam.position.copy(c).addScaledVector(dir, dist); asmCam.near = dist / 100; asmCam.far = dist * 20; asmCam.updateProjectionMatrix(); asmCtl.update(); AS.framed = true; }
 asmCanvas.addEventListener('dblclick', asmFrame);
 /* --- gumball: move the selected cluster (or connector) sideways and up/down in the 3D view. Plan moves snap to 1 ft, height to whole levels --- */
-const asmGum = new TransformControls(asmCam, asmCanvas); asmGum.setSize(0.9); asmScene.add(asmGum); const asmGumObj = new THREE.Object3D(); asmScene.add(asmGumObj);
+// the gumball loads on its own: if it can't be fetched, the 3D view still works without it
+let asmGum = { attach() {}, detach() {}, dragging: false, axis: null, object: null, camera: asmCam };
+const asmGumObj = new THREE.Object3D(); asmScene.add(asmGumObj);
+import('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/TransformControls.js').then(({ TransformControls }) => { const g = new TransformControls(asmCam, asmCanvas); g.setSize(0.9); asmScene.add(g); asmGum = g; asmGumWire(g); if (asmOn) renderAsm3D(); })
+  .catch((e) => console.warn('gumball unavailable', e));
 AS.snap = store.get('asmSnap', true) !== false; $('asmSnap').checked = AS.snap; $('asmSnap').addEventListener('change', (e) => { AS.snap = e.target.checked; store.set('asmSnap', AS.snap); });
 const asmGumKey = (o) => (o ? (o.kind === 'cluster' ? 'p:' + o.pid : o.key) : '');
 function asmGumTarget(a) { if (!a || !AS.sel) return null; const s = asmSelPiece(); if (!s) return null; const gk = asmGumKey(s.o);
@@ -6169,6 +6172,7 @@ function asmGumAttach(a, ps) { const t = asmGumTarget(a); if (!t) { asmGum.detac
   AS.gum = Object.assign(t, { cx, cz, cy }); asmGumObj.position.set(cx, cy, cz); asmGumObj.updateMatrixWorld(); asmGum.attach(asmGumObj); }
 // Esc lets go of the selection (and the gumball)
 document.addEventListener('keydown', (e) => { if (e.key !== 'Escape' || !asmOn || !AS.sel || (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName))) return; AS.sel = null; asmRenderAll(); });
+function asmGumWire(asmGum) {
 asmGum.addEventListener('dragging-changed', (e) => { asmCtl.enabled = !e.value; const g = AS.gum, a = asmCur(); if (!g || !a) return;
   if (e.value) { AS.gumDrag = true; renderAsm3D(); return; }
   // release: write the move into the assembly (and fuse again)
@@ -6180,6 +6184,7 @@ asmGum.addEventListener('objectChange', () => { const g = AS.gum; if (!g) return
   asmGumObj.position.y = AS.snap ? Math.max(0, g.cy + Math.round((asmGumObj.position.y - g.cy) / H) * H) : Math.max(0, asmGumObj.position.y); // snap: whole levels; free: any height; never below the ground
   const r = (v) => (AS.snap ? Math.round(v) : v), dx = r(asmGumObj.position.x - g.cx), dz = r(asmGumObj.position.z - g.cz), dy = asmGumObj.position.y - g.cy;
   asmGroup.children.forEach((m) => { if (m.userData.gk === g.gk) { if (!m.userData.p0) m.userData.p0 = m.position.clone(); m.position.set(m.userData.p0.x + dx, m.userData.p0.y + dy, m.userData.p0.z + dz); } }); });
+}
 // click a piece in 3D to select its cluster (a drag orbits as before)
 { let down = null; const ray = new THREE.Raycaster();
   asmCanvas.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; });
