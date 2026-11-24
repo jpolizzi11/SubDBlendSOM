@@ -661,7 +661,7 @@ details.sub > .settings { padding-bottom: 6px; }
         <button class="btn small primary" id="asmExport">Export</button></span></h2>
       <canvas id="asmViewer"></canvas>
       <div class="secbar" id="asmSec"></div>
-      <div class="vhint" style="padding:6px 14px 10px">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. Click a piece to get the gumball: drag its arrows to move that cluster (Snap to floors keeps whole levels; untick it to move freely). Pink is your outline (dashed: the height limit).</div>
+      <div class="vhint" style="padding:6px 14px 10px">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. Click a piece to get the gumball (click empty space or press Esc to let go): drag its arrows to move that cluster (Snap to floors keeps whole levels; untick it to move freely). Pink is your outline (dashed: the height limit).</div>
     </section>
   </div>
 </main>
@@ -6061,8 +6061,8 @@ function confirmDel(name) { return window.confirm ? window.confirm(`Delete ${nam
   aplan.addEventListener('pointerdown', (e) => { const a = asmCur(); if (!a || !AS.view) return; const [px, pz] = pt(e), [wx, wz] = s2a(px, pz);
     if (AS.draw) { if (AS.draw.length >= 3) { const [fx, fz] = a2s(...AS.draw[0]); if (Math.hypot(fx - px, fz - pz) < 12 * (aplan.width / aplan.clientWidth)) { $('asmDraw').click(); return; } } AS.draw.push([Math.round(wx), Math.round(wz)]); renderAsmPlan(); return; }
     const h = hitPiece(wx, wz); if (h) { AS.sel = { key: h.o.key, pid: h.o.pid }; const part = h.o.kind === 'cluster' ? a.parts.find((p) => p.pid === h.o.pid) : a.extra.find((q) => 'x:' + q.id === h.o.key);
-      drag = { kind: 'move', obj: part, sx: wx, sz: wz, ox: part.x, oz: part.z, moved: false }; asmStats(); renderAsmPlan(); }
-    else { AS.sel = null; drag = { kind: 'pan', px, pz, cx: AS.view.cx, cz: AS.view.cz }; asmStats(); renderAsmPlan(); }
+      drag = { kind: 'move', obj: part, sx: wx, sz: wz, ox: part.x, oz: part.z, moved: false }; asmStats(); renderAsmPlan(); asmGumAttach(a, asmPieces(a)); }
+    else { AS.sel = null; drag = { kind: 'pan', px, pz, cx: AS.view.cx, cz: AS.view.cz }; asmStats(); renderAsmPlan(); asmGumAttach(a, asmPieces(a)); } // the 3D gumball follows the plan selection
     aplan.setPointerCapture(e.pointerId); });
   aplan.addEventListener('pointermove', (e) => { if (!drag) return; const [px, pz] = pt(e);
     if (drag.kind === 'pan') { AS.view.cx = drag.cx - (px - drag.px) / AS.view.s; AS.view.cz = drag.cz - (pz - drag.pz) / AS.view.s; renderAsmPlan(); return; }
@@ -6167,6 +6167,8 @@ function asmGumAttach(a, ps) { const t = asmGumTarget(a); if (!t) { asmGum.detac
   // the handle sits at the middle of the cluster's footprint, on its lowest floor
   const mine = ps.filter((q) => asmGumKey(q.o) === t.gk); const cx = mine.reduce((n, q) => n + q.x, 0) / Math.max(1, mine.length), cz = mine.reduce((n, q) => n + q.z, 0) / Math.max(1, mine.length), cy = Math.min(...mine.map((q) => q.base)) * TL.set.H;
   AS.gum = Object.assign(t, { cx, cz, cy }); asmGumObj.position.set(cx, cy, cz); asmGumObj.updateMatrixWorld(); asmGum.attach(asmGumObj); }
+// Esc lets go of the selection (and the gumball)
+document.addEventListener('keydown', (e) => { if (e.key !== 'Escape' || !asmOn || !AS.sel || (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName))) return; AS.sel = null; asmRenderAll(); });
 asmGum.addEventListener('dragging-changed', (e) => { asmCtl.enabled = !e.value; const g = AS.gum, a = asmCur(); if (!g || !a) return;
   if (e.value) { AS.gumDrag = true; renderAsm3D(); return; }
   // release: write the move into the assembly (and fuse again)
@@ -6181,7 +6183,7 @@ asmGum.addEventListener('objectChange', () => { const g = AS.gum; if (!g) return
 // click a piece in 3D to select its cluster (a drag orbits as before)
 { let down = null; const ray = new THREE.Raycaster();
   asmCanvas.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; });
-  asmCanvas.addEventListener('pointerup', (e) => { if (!down || asmGum.dragging || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return; const a = asmCur(); if (!a) return;
+  asmCanvas.addEventListener('pointerup', (e) => { if (!down || asmGum.dragging || asmGum.axis || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 8) return; // a click (a little wobble allowed), not an orbit or a gumball grab const a = asmCur(); if (!a) return;
     const r = asmCanvas.getBoundingClientRect(); ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), asmCam);
     const hit = ray.intersectObjects(asmGroup.children.filter((m) => m.isMesh), false)[0]; if (!hit) { if (AS.sel) { AS.sel = null; asmRenderAll(); } return; }
     const ps = asmPieces(a), H = TL.set.H, p = hit.point; let best = null, bd = Infinity; // the piece whose box holds (or is nearest) the point hit
