@@ -5601,7 +5601,7 @@ function planDXF(pd) { const [k, unitName] = EXP_UNITS[TL.set.expUnits] || EXP_U
 // the dialog: works for the open cluster or the open assembly
 const PLAN = { src: null };
 async function openPlan(kind) {
-  ensurePlanDlg();
+  try { ensurePlanDlg(); } catch (e) { toast('Floor plan window failed: ' + e.message); throw e; }
   let base, D, pieces, paths = null, title, colorOf, labelOf;
   status('Cutting the floor plan…'); await new Promise((r) => setTimeout(r, 20));
   try {
@@ -5636,8 +5636,10 @@ $('planClose').addEventListener('click', () => { $('planDlg').hidden = true; });
 $('planDlg').addEventListener('keydown', (e) => { if (e.key === 'Escape') $('planDlg').hidden = true; });
 $('planSvg').addEventListener('click', async () => { if (!PLAN.svg) return; const nm = safe(PLAN.src.title) + '-plan-' + ($('planLevel').value === '0' ? 'ground' : 'L' + (+$('planLevel').value + 1)); await save(nm + '.svg', new Blob([PLAN.svg], { type: 'image/svg+xml' })); });
 $('planDxf').addEventListener('click', async () => { if (!PLAN.pd) return; const nm = safe(PLAN.src.title) + '-plan-' + ($('planLevel').value === '0' ? 'ground' : 'L' + (+$('planLevel').value + 1)); await save(nm + '.dxf', new Blob([planDXF(PLAN.pd)], { type: 'application/dxf' })); }); }
-$('tilePlan').addEventListener('click', () => openPlan('cluster'));
-$('asmPlan').addEventListener('click', () => openPlan('asm'));
+const planClick = (kind) => { status('Opening the floor plan…'); if (kind === 'cluster' && !curCluster()) { toast('Open a cluster first (click one in the list).'); return; } if (kind === 'asm' && !asmCur()) { toast('Pick an assembly first.'); return; }
+  openPlan(kind).catch((e) => { console.error(e); toast('Floor plan failed: ' + (e && e.message || e)); }); };
+$('tilePlan').addEventListener('click', () => planClick('cluster'));
+$('asmPlan').addEventListener('click', () => planClick('asm'));
 /* --- export at real scale: building mesh (+ circulation as polylines and/or pipes) as OBJ or STL, Z up, in the chosen units --- */
 const EXP_UNITS = { ft: [1, 'feet'], in: [12, 'inches'], m: [0.3048, 'meters'], mm: [304.8, 'millimeters'] };
 // a tube mesh along each route (rings at every point, frames kept upright since routes run mostly level)
@@ -6287,6 +6289,9 @@ function showAsm(on) {
 }
 
 /* ---------------- boot ---------------- */
+// show script errors on screen so anyone can screenshot them (instead of a button that silently does nothing)
+window.addEventListener('error', (e) => { try { toast('Page error: ' + (e.message || e.error) + (e.lineno ? ' (line ' + e.lineno + ')' : '')); } catch { /* no toast yet */ } });
+window.addEventListener('unhandledrejection', (e) => { try { toast('Page error: ' + ((e.reason && e.reason.message) || e.reason)); } catch { /* no toast yet */ } });
 window.__sbs = { get TL() { return TL; }, get REF() { return REF; }, get AS() { return AS; }, prepAll, tileFull, evaluateCluster, asmPieces, asmCur, byIdFull, pSize, fuseCluster, edgeOf, generateFormation, fitsNow, rulesFor, typoPlan, mulberry: (n) => C.mulberry32(n), exportModel, pipeMesh, msContours, planData, planSVG, planDXF }; // read-only debugging handle
 renderCrit(); renderSettings(); renderModels(); renderPicks(); renderInspector(); sizeViewer(); sizeMap();
 if (BUILD) { document.body.classList.add('build'); document.title = 'SubD Blend SOM · Clusters'; showTiling(true); } // the light site skips the SOM map's start-up work
