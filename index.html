@@ -5601,6 +5601,7 @@ function planDXF(pd) { const [k, unitName] = EXP_UNITS[TL.set.expUnits] || EXP_U
 // the dialog: works for the open cluster or the open assembly
 const PLAN = { src: null };
 async function openPlan(kind) {
+  ensurePlanDlg();
   let base, D, pieces, paths = null, title, colorOf, labelOf;
   status('Cutting the floor plan…'); await new Promise((r) => setTimeout(r, 20));
   try {
@@ -5619,11 +5620,22 @@ async function openPlan(kind) {
 function drawFloorPlan() { const S = PLAN.src; if (!S) return; const pd = planData(S.base, S.D, S.pieces, +$('planLevel').value, Math.max(1, +$('planCut').value || 4), S.paths, S.colorOf, S.labelOf);
   pd.pathsOn = $('planPaths').checked; pd.labelsOn = $('planLabels').checked; if (!pd.pathsOn) pd.lines = []; if (!pd.labelsOn) pd.here.forEach((q) => (q.label = ''));
   PLAN.pd = pd; PLAN.svg = planSVG(pd, S.title + ' · floor plan'); $('planView').innerHTML = PLAN.svg || '<p class="note" style="padding:16px;color:#333">Nothing on this floor.</p>'; }
+// the plan window is built the first time it is opened (so a page that loaded partly can never leave the button dead)
+function ensurePlanDlg() { if ($('planDlg')) return; document.body.insertAdjacentHTML('beforeend', `<div id="planDlg" class="plandlg" hidden role="dialog" aria-modal="true" aria-labelledby="planTitle"><div class="planbox">
+  <div class="planhead"><strong id="planTitle">Floor plan</strong><span class="planctl">
+    <label>Floor <select id="planLevel"></select></label>
+    <label>Cut at <input type="number" id="planCut" min="1" max="10" step="0.5" value="4"> ft</label>
+    <label><input type="checkbox" id="planPaths" checked> Circulation</label>
+    <label><input type="checkbox" id="planLabels" checked> Pieces</label>
+    <button class="btn small" id="planSvg">SVG</button><button class="btn small primary" id="planDxf">DXF (real scale)</button><button class="btn small" id="planClose" aria-label="Close">Close</button></span></div>
+  <div id="planView" class="planview"></div>
+  <p class="note" id="planNote">Cut walls in black (poché), floor edges in grey, piece outlines dashed, circulation in red. North is up (Rhino +Y). DXF uses the export units in Tile settings.</p>
+</div></div>`);
 ['planLevel', 'planCut', 'planPaths', 'planLabels'].forEach((id) => $(id).addEventListener('change', drawFloorPlan));
 $('planClose').addEventListener('click', () => { $('planDlg').hidden = true; });
 $('planDlg').addEventListener('keydown', (e) => { if (e.key === 'Escape') $('planDlg').hidden = true; });
 $('planSvg').addEventListener('click', async () => { if (!PLAN.svg) return; const nm = safe(PLAN.src.title) + '-plan-' + ($('planLevel').value === '0' ? 'ground' : 'L' + (+$('planLevel').value + 1)); await save(nm + '.svg', new Blob([PLAN.svg], { type: 'image/svg+xml' })); });
-$('planDxf').addEventListener('click', async () => { if (!PLAN.pd) return; const nm = safe(PLAN.src.title) + '-plan-' + ($('planLevel').value === '0' ? 'ground' : 'L' + (+$('planLevel').value + 1)); await save(nm + '.dxf', new Blob([planDXF(PLAN.pd)], { type: 'application/dxf' })); });
+$('planDxf').addEventListener('click', async () => { if (!PLAN.pd) return; const nm = safe(PLAN.src.title) + '-plan-' + ($('planLevel').value === '0' ? 'ground' : 'L' + (+$('planLevel').value + 1)); await save(nm + '.dxf', new Blob([planDXF(PLAN.pd)], { type: 'application/dxf' })); }); }
 $('tilePlan').addEventListener('click', () => openPlan('cluster'));
 $('asmPlan').addEventListener('click', () => openPlan('asm'));
 /* --- export at real scale: building mesh (+ circulation as polylines and/or pipes) as OBJ or STL, Z up, in the chosen units --- */
@@ -6281,14 +6293,4 @@ if (BUILD) { document.body.classList.add('build'); document.title = 'SubD Blend 
 else { const t0 = store.get('typo', 'gathering'); renderTypoTabs(); switchTypo(TABS.some((t) => t.key === t0) ? t0 : 'gathering').then(preloadAll); }
 </script>
 
-<div id="planDlg" class="plandlg" hidden role="dialog" aria-modal="true" aria-labelledby="planTitle"><div class="planbox">
-  <div class="planhead"><strong id="planTitle">Floor plan</strong><span class="planctl">
-    <label>Floor <select id="planLevel"></select></label>
-    <label>Cut at <input type="number" id="planCut" min="1" max="10" step="0.5" value="4"> ft</label>
-    <label><input type="checkbox" id="planPaths" checked> Circulation</label>
-    <label><input type="checkbox" id="planLabels" checked> Pieces</label>
-    <button class="btn small" id="planSvg">SVG</button><button class="btn small primary" id="planDxf">DXF (real scale)</button><button class="btn small" id="planClose" aria-label="Close">Close</button></span></div>
-  <div id="planView" class="planview"></div>
-  <p class="note" id="planNote">Cut walls in black (poché), floor edges in grey, piece outlines dashed, circulation in red. North is up (Rhino +Y). DXF uses the export units in Tile settings.</p>
-</div></div>
 </body></html>
