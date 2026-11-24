@@ -4994,10 +4994,13 @@ function fuseCluster(pieces, zOf, ev, opts) {
   // are patched (all of them on the ground floor; on upper floors only holes up to holesMax sq ft, so real voids stay open)
   // every floor plate counts, not just the one a piece stands on: a 2- or 3-storey piece has floors at each level it spans
   // (an open-bottomed piece has none at its own base), so upper plates are bridged and patched too
-  const spans = (q, g) => { const n = Math.max(1, Math.round((q.top - 1 - q.pc.base * H) / H)); return g >= q.pc.base + (q.openBottom ? 1 : 0) && g < q.pc.base + n; };
-  let holes = 0; const slabs = []; { const gMax = Math.max(0, ...items.map((q) => Math.ceil(q.top / H))), levels = []; for (let g = 0; g <= gMax; g++) if (items.some((q) => spans(q, g))) levels.push(g);
-    for (const g of levels) { const yf = g * H, region = new Uint8Array(nx * nz), solid = new Uint8Array(nx * nz);
-      for (const q of items) { if (!spans(q, g)) continue; const S = q.S / 2 + 1.5;
+  const spans = (q, g) => { const n = Math.max(1, Math.round((q.top - 1 - q.pc.base * H - (q.pc.lift || 0)) / H)); return g >= q.pc.base + (q.openBottom ? 1 : 0) && g < q.pc.base + n; };
+  // floor heights to patch: every level a piece spans, at that piece's own height (a cluster lifted off the level grid has its floors a few feet higher)
+  const liftOf = (q) => q.pc.lift || 0;
+  let holes = 0; const slabs = []; { const gMax = Math.max(0, ...items.map((q) => Math.ceil(q.top / H))), levels = [];
+    for (let g = 0; g <= gMax; g++) { const ls = []; for (const q of items) if (spans(q, g) && !ls.some((L) => Math.abs(L - liftOf(q)) < 0.3)) ls.push(liftOf(q)); for (const L of ls) levels.push({ g, L }); }
+    for (const { g, L } of levels) { const onH = (q) => spans(q, g) && Math.abs(liftOf(q) - L) < 0.3, yf = g * H + L, region = new Uint8Array(nx * nz), solid = new Uint8Array(nx * nz);
+      for (const q of items) { if (!onH(q)) continue; const S = q.S / 2 + 1.5;
         for (let iz = Math.max(0, Math.floor((q.pc.z - S - z0) / v)); iz <= Math.min(nz - 1, Math.ceil((q.pc.z + S - z0) / v)); iz++) for (let ix = Math.max(0, Math.floor((q.pc.x - S - x0) / v)); ix <= Math.min(nx - 1, Math.ceil((q.pc.x + S - x0) / v)); ix++) region[ix + iz * nx] = 1; }
       const top = new Float32Array(nx * nz).fill(yf); // floor surface height per column (models' floors sit a little below the level line)
       for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) { const c = ix + iz * nx; if (!region[c]) continue; const X = x0 + ix * v, Z = z0 + iz * v;
@@ -5010,14 +5013,14 @@ function fuseCluster(pieces, zOf, ev, opts) {
       for (let c = 0; c < nx * nz; c++) if (region[c] && !solid[c] && closed[c]) fill[c] = 1;
       // seams: models rarely reach the very edge of their tile, so two touching pieces leave a slot between their floors.
       // Along every shared edge, each row is bridged from one floor to the other (up to 10 ft); rows with no floor on a side stay open
-      const onLvl = items.filter((q) => spans(q, g)), cellAt = (X, Z) => { const ix = Math.round((X - x0) / v), iz = Math.round((Z - z0) / v); return ix < 0 || iz < 0 || ix >= nx || iz >= nz ? -1 : ix + iz * nx; };
+      const onLvl = items.filter(onH), cellAt = (X, Z) => { const ix = Math.round((X - x0) / v), iz = Math.round((Z - z0) / v); return ix < 0 || iz < 0 || ix >= nx || iz >= nz ? -1 : ix + iz * nx; };
       for (const A of onLvl) for (const B of onLvl) { if (A === B) continue;
-        for (const ws of [0, 1]) { const ea = edgeOf(A.pc, ws), eb = edgeOf(B.pc, ws + 2); if (Math.abs(ea.c - eb.c) > 2.5) continue; const o0 = Math.max(ea.a, eb.a), o1 = Math.min(ea.b, eb.b); if (o1 - o0 < 1) continue;
+        for (const ws of [0, 1]) { const ea = edgeOf(A.pc, ws), eb = edgeOf(B.pc, ws + 2); if (eb.c - ea.c > 6 || eb.c - ea.c < -2.5) continue; /* pieces up to 6 ft apart still get their floors joined */ const o0 = Math.max(ea.a, eb.a), o1 = Math.min(ea.b, eb.b); if (o1 - o0 < 1) continue;
           const c = (ea.c + eb.c) / 2, along = ws === 0, pt = (n, u) => along ? cellAt(n, u) : cellAt(u, n);
           for (let u = o0 + v / 2; u <= o1 - v / 2; u += v) { let dA = -1, dB = -1;
-            for (let t = 0; t <= 8; t += v) { const q = pt(c - t, u); if (q >= 0 && solid[q]) { dA = t; break; } }
-            for (let t = 0; t <= 8; t += v) { const q = pt(c + t, u); if (q >= 0 && solid[q]) { dB = t; break; } }
-            if (dA < 0 || dB < 0 || dA + dB > 10) continue;
+            for (let t = 0; t <= 10; t += v) { const q = pt(c - t, u); if (q >= 0 && solid[q]) { dA = t; break; } }
+            for (let t = 0; t <= 10; t += v) { const q = pt(c + t, u); if (q >= 0 && solid[q]) { dB = t; break; } }
+            if (dA < 0 || dB < 0 || dA + dB > 14) continue;
             const ta = top[pt(c - dA, u)], tb2 = top[pt(c + dB, u)]; for (let t = -dA; t <= dB; t += v / 2) { const q = pt(c + t, u); if (q >= 0 && !solid[q]) { fill[q] = 1; top[q] = ta + (tb2 - ta) * (t + dA) / Math.max(v, dA + dB); } } } } }
       // enclosed holes (not reachable from the outside of the region)
       const seen = new Uint8Array(nx * nz);
