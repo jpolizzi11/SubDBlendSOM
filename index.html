@@ -563,7 +563,7 @@ details.sub > .settings { padding-bottom: 6px; }
         <label class="mrow"><input type="checkbox" id="tSeamsChk" checked> Show passages</label>
         <div class="mrow" style="border-top:1px solid var(--line);margin-top:4px;padding-top:8px"><b style="color:var(--ink)">Fuse</b></div>
         <div class="mrow"><span>Seam blend</span><span class="rangerow" style="min-width:120px"><input type="range" id="tFuseBlend" min="2" max="8" step="0.5" value="4"><output id="tFuseBlendOut">4 ft</output></span></div>
-        <div class="mrow"><span>Openings</span><select id="tFuseOpen"><option value="none">None</option><option value="blocked" selected>Where a door meets a wall</option><option value="touching">…and between touching rooms</option></select></div><label class="mrow"><input type="checkbox" id="tLevels" checked> Show floor levels</label></div></details><label class="note" style="margin:0;display:flex;gap:6px;align-items:center" title="Blend all pieces into one seamless form and open walls where doors meet them"><input type="checkbox" id="tFuse"> Fuse</label><label class="note" style="margin:0;display:flex;gap:6px;align-items:center" title="Show how you walk through the cluster, piece to piece"><input type="checkbox" id="tPaths"> Paths</label><button class="btn small" id="tToFuse" title="Open this cluster in the Fuse step to perfect its joins">Send to Fuse →</button><button class="btn small primary" id="tileExport">Cluster STL .zip</button></span></h2>
+        <div class="mrow"><span>Openings</span><select id="tFuseOpen"><option value="none">None</option><option value="blocked" selected>Where a door meets a wall</option><option value="touching">…and between touching rooms</option></select></div><label class="mrow"><input type="checkbox" id="tLevels" checked> Show floor levels</label></div></details><label class="note" style="margin:0;display:flex;gap:6px;align-items:center" title="Blend all pieces into one seamless form and open walls where doors meet them"><input type="checkbox" id="tFuse"> Fuse</label><label class="note" style="margin:0;display:flex;gap:6px;align-items:center" title="Show how you walk through the cluster, piece to piece"><input type="checkbox" id="tPaths"> Paths</label><button class="btn small" id="tToFuse" title="Open this cluster in the Fuse step to perfect its joins">Send to Fuse →</button><button class="btn small primary" id="tileExport">Export</button></span></h2>
       <canvas id="tileViewer"></canvas>
       <div class="secbar" id="tSec"></div>
       <div class="vhint" style="padding:6px 14px 0">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. Green lines are the shared floor levels.</div>
@@ -599,7 +599,7 @@ details.sub > .settings { padding-bottom: 6px; }
   </div>
   <div class="col">
     <section class="panel">
-      <div class="maptools"><strong id="fzTitle" style="font-size:15px">No cluster sent yet</strong><span class="actions" style="margin:0"><label class="note" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="fzPaths"> Paths</label><button class="btn small" id="fzBack">Edit pieces in Clusters</button><button class="btn small" id="fzRemove">Remove from Fuse</button><button class="btn small primary" id="fzExport">Fused STL .zip</button></span></div>
+      <div class="maptools"><strong id="fzTitle" style="font-size:15px">No cluster sent yet</strong><span class="actions" style="margin:0"><label class="note" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="fzPaths"> Paths</label><button class="btn small" id="fzBack">Edit pieces in Clusters</button><button class="btn small" id="fzRemove">Remove from Fuse</button><button class="btn small primary" id="fzExport">Export</button></span></div>
       <canvas id="fzViewer"></canvas>
       <div class="secbar" id="fzSec"></div>
       <div class="vhint" style="padding:6px 14px 0">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. With a brush tool on, click the surface to edit it.</div>
@@ -658,7 +658,7 @@ details.sub > .settings { padding-bottom: 6px; }
     <section class="panel">
       <h2>3D <span class="actions" style="margin:0"><select id="asmColor" aria-label="Colour by"><option value="cluster">Colour by cluster</option><option value="program">Colour by program</option><option value="model">Colour by original model</option></select>
         <label class="note" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="asmFuse"> Fuse</label><label class="note" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="asmPathsChk"> Paths</label>
-        <button class="btn small primary" id="asmExport">Export .zip</button></span></h2>
+        <button class="btn small primary" id="asmExport">Export</button></span></h2>
       <canvas id="asmViewer"></canvas>
       <div class="secbar" id="asmSec"></div>
       <div class="vhint" style="padding:6px 14px 10px">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. Pink is your outline (dashed: the height limit).</div>
@@ -5577,7 +5577,8 @@ async function exportModel(name, meshes, paths, what) {
     files.push({ name: base + '.obj', data: new TextEncoder().encode(out.join('\n') + '\n') });
   }
   if (fmt === 'stl' && mode === 'lines' && wantLines) toast('Lines need OBJ: STL holds meshes only, so the routes went in as pipes.');
-  status('Packing…', 1); await save(base + '.zip', C.zip(files));
+  // one file (always the case for OBJ): save it as it is; several (STL with pipes) go in a zip
+  if (files.length === 1) await save(files[0].name, new Blob([files[0].data], { type: fmt === 'obj' ? 'model/obj' : 'model/stl' })); else { status('Packing…', 1); await save(base + '.zip', C.zip(files)); }
   const lines = wantLines && fmt === 'obj';
   return `${unitName}, Z up${lines || wantPipes ? ', with circulation ' + (lines && wantPipes ? 'lines and pipes' : lines ? 'lines' : 'pipes') : ''}`;
 }
