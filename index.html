@@ -173,6 +173,7 @@ body.fuse-mode main.app:not(#fuseApp),body.fuse-mode #runBtn,body.fuse-mode #ban
 .clitem{display:block;width:100%;text-align:left;border:1px solid transparent;background:transparent;border-radius:6px;padding:5px 10px;cursor:pointer;font-weight:600;color:var(--ink)}.clitem:hover{background:var(--sunk)}.clitem.on{border-color:var(--accent);background:var(--sunk)}.clitem small{color:var(--muted);font-weight:500;margin-left:6px}
 .fullsite{margin-left:auto;align-self:center;font-size:12px;color:var(--muted);text-decoration:none;padding:6px 10px;border-radius:6px}.fullsite:hover{color:var(--ink);background:var(--sunk)}body.build #typoTabs,body.build #tToFuse{display:none}
 .settings .span{grid-column:1/-1}.typolist{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;width:100%}.typoitem{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:8px;cursor:pointer}.typoitem:has(input:checked){border-color:var(--accent);background:var(--sunk)}.typoitem input{margin-top:3px}.typoitem span{display:flex;flex-direction:column;gap:2px;min-width:0}.typoitem small{color:var(--muted);font-size:11.5px;line-height:1.35}
+.plandlg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px}.plandlg[hidden]{display:none}.planbox{background:var(--panel,#16181c);color:var(--ink);border:1px solid var(--line);border-radius:12px;width:min(1200px,100%);max-height:100%;display:flex;flex-direction:column;gap:8px;padding:12px}.planhead{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between}.planctl{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;font-size:13px}.planctl input[type=number]{width:56px}.planview{background:#fff;border-radius:8px;overflow:auto;min-height:300px;flex:1}.planview svg{display:block;width:100%;height:auto;max-height:70vh}
 .clrow{display:flex;align-items:center;gap:2px}.clrow .clitem{flex:1;min-width:0}.clren{border:0;background:transparent;color:var(--muted);cursor:pointer;border-radius:6px;padding:4px 8px;font-size:14px;opacity:.55}.clren:hover,.clren:focus-visible{opacity:1;background:var(--sunk);color:var(--ink)}.clrename{font:inherit;font-weight:600;width:100%;box-sizing:border-box;border:1px solid var(--accent);border-radius:6px;padding:5px 10px;background:var(--sunk);color:var(--ink);margin:1px 0}
 .clname{font:inherit;font-size:15px;font-weight:700;border:1px dashed var(--line);background:transparent;color:var(--ink);border-radius:6px;padding:4px 6px;min-width:0;flex:1}.clname:hover,.clname:focus{border-color:var(--line)}
 #tilePlan{touch-action:none}
@@ -563,7 +564,7 @@ details.sub > .settings { padding-bottom: 6px; }
         <label class="mrow"><input type="checkbox" id="tSeamsChk" checked> Show passages</label>
         <div class="mrow" style="border-top:1px solid var(--line);margin-top:4px;padding-top:8px"><b style="color:var(--ink)">Fuse</b></div>
         <div class="mrow"><span>Seam blend</span><span class="rangerow" style="min-width:120px"><input type="range" id="tFuseBlend" min="2" max="8" step="0.5" value="4"><output id="tFuseBlendOut">4 ft</output></span></div>
-        <div class="mrow"><span>Openings</span><select id="tFuseOpen"><option value="none">None</option><option value="blocked" selected>Where a door meets a wall</option><option value="touching">…and between touching rooms</option></select></div><label class="mrow"><input type="checkbox" id="tLevels" checked> Show floor levels</label></div></details><label class="note" style="margin:0;display:flex;gap:6px;align-items:center" title="Blend all pieces into one seamless form and open walls where doors meet them"><input type="checkbox" id="tFuse"> Fuse</label><label class="note" style="margin:0;display:flex;gap:6px;align-items:center" title="Show how you walk through the cluster, piece to piece"><input type="checkbox" id="tPaths"> Paths</label><button class="btn small" id="tToFuse" title="Open this cluster in the Fuse step to perfect its joins">Send to Fuse →</button><button class="btn small primary" id="tileExport">Cluster STL .zip</button></span></h2>
+        <div class="mrow"><span>Openings</span><select id="tFuseOpen"><option value="none">None</option><option value="blocked" selected>Where a door meets a wall</option><option value="touching">…and between touching rooms</option></select></div><label class="mrow"><input type="checkbox" id="tLevels" checked> Show floor levels</label></div></details><label class="note" style="margin:0;display:flex;gap:6px;align-items:center" title="Blend all pieces into one seamless form and open walls where doors meet them"><input type="checkbox" id="tFuse"> Fuse</label><label class="note" style="margin:0;display:flex;gap:6px;align-items:center" title="Show how you walk through the cluster, piece to piece"><input type="checkbox" id="tPaths"> Paths</label><button class="btn small" id="tToFuse" title="Open this cluster in the Fuse step to perfect its joins">Send to Fuse →</button><button class="btn small" id="tilePlan">Floor plan</button><button class="btn small primary" id="tileExport">Export .zip</button></span></h2>
       <canvas id="tileViewer"></canvas>
       <div class="secbar" id="tSec"></div>
       <div class="vhint" style="padding:6px 14px 0">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. Green lines are the shared floor levels.</div>
@@ -658,7 +659,7 @@ details.sub > .settings { padding-bottom: 6px; }
     <section class="panel">
       <h2>3D <span class="actions" style="margin:0"><select id="asmColor" aria-label="Colour by"><option value="cluster">Colour by cluster</option><option value="program">Colour by program</option><option value="model">Colour by original model</option></select>
         <label class="note" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="asmFuse"> Fuse</label><label class="note" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="asmPathsChk"> Paths</label>
-        <button class="btn small primary" id="asmExport">Export .zip</button></span></h2>
+        <button class="btn small" id="asmPlan">Floor plan</button><button class="btn small primary" id="asmExport">Export .zip</button></span></h2>
       <canvas id="asmViewer"></canvas>
       <div class="secbar" id="asmSec"></div>
       <div class="vhint" style="padding:6px 14px 10px">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom · double-click to re-frame. Pink is your outline (dashed: the height limit).</div>
@@ -5400,7 +5401,7 @@ function renderLevelBtns() {
 }
 function renderPieceBar() {
   const c = curCluster(), pc = c && c.pieces[TL.pick]; document.querySelectorAll('#tilePieceBar button').forEach((b) => (b.disabled = !pc));
-  $('tFit').disabled = !c; $('tBranch').disabled = !c; $('tDelCl').disabled = !c; $('tileExport').disabled = !c; $('tClName').disabled = !c; $('tClName').value = c ? c.name : '';
+  $('tFit').disabled = !c; $('tBranch').disabled = !c; $('tDelCl').disabled = !c; $('tileExport').disabled = !c; $('tilePlan').disabled = !c; $('tClName').disabled = !c; $('tClName').value = c ? c.name : '';
   const it = pc && refItem(pc.t);
   $('tilePieceInfo').textContent = pc ? `${it ? it.name : 'Missing tile'} · at (${pc.x}, ${pc.z}) ft · starts on level ${pc.base + 1} · ${Math.round(pSize(pc))} ft across (${Math.round((pc.sc || 1) * 100)}%). Drag it to move (1 ft steps; edges stick to neighbours).`
     : c ? 'Click a piece to select it, drag to move it. Drag empty space to pan, scroll to zoom. Click a tile in the library to add it.' : '';
@@ -5544,6 +5545,87 @@ function clusterPathsFor(c) { if ((TL.set.expPaths || 'none') === 'none') return
   status('Tracing the walking routes for the export…'); const ev = evaluateCluster(c.pieces, byIdFull(), 0), zs = new Map();
   const base = fuseCluster(c.pieces, (i) => { const pc = c.pieces[i]; if (!refItem(pc.t)) return null; const cut = !!(ev.roofCut && ev.roofCut.has(i)), key = pc.t + (cut ? '|c' : ''); if (!zs.has(key)) zs.set(key, fuseDataFor(pc.t, cut)); return zs.get(key); }, ev, { H: TL.set.H, voxel: 0.5, blend: 1.5, smooth: 1, open: 'none', clear: 0 });
   if (!base) return null; TL.paths.data = circulation(base, withStoreys(c.pieces), ev, TL.set.H); TL.paths.sig = sig; return TL.paths.data.paths; }
+/* --- floor plan: a horizontal cut through the fused form, drawn as an architectural plan (SVG to look at, DXF at real scale) --- */
+// marching squares: closed outlines where a 2D field crosses 0 (negative = inside), in grid coordinates
+function msContours(F, nx, nz) { const val = (i, j) => (i < 0 || j < 0 || i >= nx || j >= nz ? 1 : F[i + j * nx]); const segs = [];
+  const TAB = { 1: [['L', 'T']], 2: [['T', 'R']], 3: [['L', 'R']], 4: [['R', 'B']], 5: [['L', 'T'], ['R', 'B']], 6: [['T', 'B']], 7: [['L', 'B']], 8: [['B', 'L']], 9: [['T', 'B']], 10: [['T', 'R'], ['B', 'L']], 11: [['R', 'B']], 12: [['L', 'R']], 13: [['T', 'R']], 14: [['L', 'T']] };
+  for (let j = -1; j < nz; j++) for (let i = -1; i < nx; i++) { const a = val(i, j), b = val(i + 1, j), c = val(i + 1, j + 1), d = val(i, j + 1), k = (a < 0) | ((b < 0) << 1) | ((c < 0) << 2) | ((d < 0) << 3); if (!TAB[k]) continue;
+    const ed = (e) => e === 'T' ? ['h' + i + ',' + j, i + a / (a - b), j] : e === 'B' ? ['h' + i + ',' + (j + 1), i + d / (d - c), j + 1] : e === 'L' ? ['v' + i + ',' + j, i, j + a / (a - d)] : ['v' + (i + 1) + ',' + j, i + 1, j + b / (b - c)];
+    for (const [e1, e2] of TAB[k]) segs.push([ed(e1), ed(e2)]); }
+  const at = new Map(); segs.forEach((sg, si) => sg.forEach((p) => { if (!at.has(p[0])) at.set(p[0], []); at.get(p[0]).push(si); }));
+  const used = new Uint8Array(segs.length), loops = [];
+  for (let s0 = 0; s0 < segs.length; s0++) { if (used[s0]) continue; used[s0] = 1; const line = [segs[s0][0], segs[s0][1]]; let closed = false;
+    for (const dir of [1, 0]) { for (;;) { const end = dir ? line[line.length - 1] : line[0]; const nxt = (at.get(end[0]) || []).find((x) => !used[x]); if (nxt === undefined) { if (dir && end[0] === line[0][0]) closed = true; break; } used[nxt] = 1; const sg = segs[nxt], o = sg[0][0] === end[0] ? sg[1] : sg[0]; dir ? line.push(o) : line.unshift(o); } if (closed) break; }
+    loops.push({ pts: line.map((p) => [p[1], p[2]]), closed: closed || line[0][0] === line[line.length - 1][0] }); }
+  return loops; }
+function rdp(pts, tol) { if (pts.length < 3) return pts; const keep = new Uint8Array(pts.length); keep[0] = keep[pts.length - 1] = 1; const st = [[0, pts.length - 1]];
+  while (st.length) { const [a, b] = st.pop(); let md = 0, mi = -1; const [ax, ay] = pts[a], [bx, by] = pts[b], L = Math.hypot(bx - ax, by - ay) || 1e-9;
+    for (let i = a + 1; i < b; i++) { const d = Math.abs((bx - ax) * (ay - pts[i][1]) - (ax - pts[i][0]) * (by - ay)) / L; if (d > md) { md = d; mi = i; } } if (md > tol) { keep[mi] = 1; st.push([a, mi], [mi, b]); } }
+  return pts.filter((_, i) => keep[i]); }
+// a closed loop starts and ends at the same point, so simplify it as two halves split at its farthest point
+function rdpLoop(pts, tol, closed) { if (!closed || pts.length < 4) return rdp(pts, tol); let k = 0, md = -1; for (let i = 1; i < pts.length; i++) { const d = (pts[i][0] - pts[0][0]) ** 2 + (pts[i][1] - pts[0][1]) ** 2; if (d > md) { md = d; k = i; } }
+  return rdp(pts.slice(0, k + 1), tol).concat(rdp(pts.slice(k), tol).slice(1)); }
+// everything the plan needs, in feet (plan x = world x, plan y = world z, so north/up = Rhino +Y)
+function planData(base, D, pieces, g, cutH, paths, colorOf, labelOf) {
+  const { nx, ny, nz, v, x0, y0, z0 } = base, sxy = nx * ny, H = TL.set.H, yf = g * H, yc = yf + cutH;
+  const at = (ix, iz, Y) => { const fy = (Y - y0) / v, a = Math.max(0, Math.min(ny - 1, Math.floor(fy))), b = Math.min(ny - 1, a + 1), t = Math.max(0, Math.min(1, fy - a)); return D[ix + a * nx + iz * sxy] * (1 - t) + D[ix + b * nx + iz * sxy] * t; };
+  const cut = new Float32Array(nx * nz), flo = new Float32Array(nx * nz);
+  for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) { const c = ix + iz * nx; cut[c] = at(ix, iz, yc); let m = Infinity; for (let y = yf - 1.4; y <= yf + 0.3; y += v / 2) m = Math.min(m, at(ix, iz, y)); flo[c] = m; }
+  const toFt = (loops, closedOnly) => loops.filter((l) => l.pts.length > 3 && (!closedOnly || l.closed)).map((l) => ({ closed: l.closed, pts: rdpLoop(l.pts.map(([i, j]) => [x0 + i * v, z0 + j * v]), v * 0.35, l.closed) }));
+  const walls = toFt(msContours(cut, nx, nz)), floors = toFt(msContours(flo, nx, nz));
+  const here = pieces.map((pc, i) => ({ pc, i })).filter(({ pc }) => pc.base <= g && g < pc.base + (pc.storeys || 1)).map(({ pc, i }) => { const S = pSize(pc) / 2; return { x: pc.x, z: pc.z, S, color: colorOf(pc, i), label: labelOf(pc, i) }; });
+  const lines = (paths || []).map((pts) => pts.filter((p) => p[1] > yf - 1.2 && p[1] < yf + H - 1).map((p) => [p[0], p[2]])).filter((l) => l.length > 1);
+  return { walls, floors, here, lines, g, cutH }; }
+function planSVG(pd, title) {
+  const all = [...pd.walls, ...pd.floors].flatMap((l) => l.pts).concat(pd.here.flatMap((q) => [[q.x - q.S, q.z - q.S], [q.x + q.S, q.z + q.S]])); if (!all.length) return null;
+  let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; for (const [x, y] of all) { mnx = Math.min(mnx, x); mny = Math.min(mny, y); mxx = Math.max(mxx, x); mxy = Math.max(mxy, y); }
+  const m = 14, W = mxx - mnx + 2 * m, Hh = mxy - mny + 2 * m + 12, X0 = mnx - m, Y0 = mny - m, f = (n) => +n.toFixed(2), d = (l) => 'M' + l.pts.map(([x, y]) => f(x) + ' ' + f(y)).join('L') + (l.closed ? 'Z' : '');
+  const o = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${f(X0)} ${f(Y0)} ${f(W)} ${f(Hh)}" width="${Math.round(W * 8)}" height="${Math.round(Hh * 8)}" font-family="Helvetica, Arial, sans-serif">`, `<rect x="${f(X0)}" y="${f(Y0)}" width="${f(W)}" height="${f(Hh)}" fill="#fff"/>`];
+  for (const q of pd.here) o.push(`<rect x="${f(q.x - q.S)}" y="${f(q.z - q.S)}" width="${f(2 * q.S)}" height="${f(2 * q.S)}" fill="${q.color}" fill-opacity="0.16"/>`);
+  o.push(`<g fill="none" stroke="#8a8f98" stroke-width="0.18">${pd.floors.map((l) => `<path d="${d(l)}"/>`).join('')}</g>`);
+  if (pd.labelsOn) o.push(`<g fill="none" stroke="#9aa0a8" stroke-width="0.12" stroke-dasharray="1 0.8">${pd.here.map((q) => `<rect x="${f(q.x - q.S)}" y="${f(q.z - q.S)}" width="${f(2 * q.S)}" height="${f(2 * q.S)}"/>`).join('')}</g>`);
+  o.push(`<path fill="#111" fill-rule="evenodd" stroke="#111" stroke-width="0.12" d="${pd.walls.filter((l) => l.closed).map(d).join('')}"/>`);
+  if (pd.pathsOn) o.push(`<g fill="none" stroke="#d23c3c" stroke-width="0.45" stroke-linecap="round" stroke-linejoin="round">${pd.lines.map((l) => `<polyline points="${l.map(([x, y]) => f(x) + ',' + f(y)).join(' ')}"/>`).join('')}</g>`);
+  if (pd.labelsOn) o.push(`<g font-size="1.6" fill="#333" text-anchor="middle">${pd.here.map((q) => `<text x="${f(q.x)}" y="${f(q.z)}" paint-order="stroke" stroke="#fff" stroke-width="0.5">${esc(q.label)}</text>`).join('')}</g>`);
+  const by = mxy + m * 0.55, bx = mnx; // scale bar and north arrow
+  o.push(`<g stroke="#111" stroke-width="0.2" fill="none"><path d="M${f(bx)} ${f(by)}h40"/>${[0, 10, 20, 30, 40].map((t) => `<path d="M${f(bx + t)} ${f(by - 0.8)}v1.6"/>`).join('')}</g><g font-size="1.6" fill="#111">${[0, 10, 20, 40].map((t) => `<text x="${f(bx + t)}" y="${f(by + 2.6)}" text-anchor="middle">${t}'</text>`).join('')}</g>`);
+  o.push(`<g transform="translate(${f(mxx - 3)} ${f(by - 1)})"><path d="M0 -4 L2 2 L0 0.8 L-2 2Z" fill="#111"/><text y="5" font-size="1.8" text-anchor="middle" fill="#111">N</text></g>`);
+  o.push(`<text x="${f(mnx)}" y="${f(mny - m * 0.45)}" font-size="2.6" font-weight="700" fill="#111">${esc(title)}</text><text x="${f(mnx)}" y="${f(mny - m * 0.45 + 2.8)}" font-size="1.7" fill="#555">${pd.g === 0 ? 'Ground floor' : 'Level ' + (pd.g + 1)} · cut at ${pd.cutH} ft above the floor · feet</text></svg>`);
+  return o.join(''); }
+function planDXF(pd) { const [k, unitName] = EXP_UNITS[TL.set.expUnits] || EXP_UNITS.ft, code = { ft: 2, in: 1, m: 6, mm: 4 }[TL.set.expUnits] || 2, o = ['0', 'SECTION', '2', 'HEADER', '9', '$INSUNITS', '70', String(code), '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES'];
+  const pl = (layer, pts, closed) => { o.push('0', 'POLYLINE', '8', layer, '66', '1', '70', closed ? '1' : '0'); for (const [x, y] of pts) o.push('0', 'VERTEX', '8', layer, '10', (x * k).toFixed(4), '20', (-y * k).toFixed(4), '30', '0'); o.push('0', 'SEQEND', '8', layer); };
+  for (const l of pd.walls) pl('CUT_WALLS', l.pts, l.closed); for (const l of pd.floors) pl('FLOOR_EDGE', l.pts, l.closed);
+  for (const q of pd.here) { pl('PIECES', [[q.x - q.S, q.z - q.S], [q.x + q.S, q.z - q.S], [q.x + q.S, q.z + q.S], [q.x - q.S, q.z + q.S]], true); o.push('0', 'TEXT', '8', 'PIECE_LABELS', '10', (q.x * k).toFixed(4), '20', (-q.z * k).toFixed(4), '30', '0', '40', (1.5 * k).toFixed(4), '1', String(q.label).replace(/[\r\n]/g, ' ')); }
+  for (const l of pd.lines) pl('CIRCULATION', l, false);
+  o.push('0', 'ENDSEC', '0', 'EOF'); return o.join('\r\n') + '\r\n'; }
+// the dialog: works for the open cluster or the open assembly
+const PLAN = { src: null };
+async function openPlan(kind) {
+  let base, D, pieces, paths = null, title, colorOf, labelOf;
+  status('Cutting the floor plan…'); await new Promise((r) => setTimeout(r, 20));
+  try {
+    if (kind === 'asm') { const a = asmCur(); if (!a) return; const ps = asmPieces(a), ev = evaluateCluster(ps, byIdFull(), 0); title = a.name;
+      base = AS.fuse && AS.base && AS.fusedReady ? AS.base : fuseCluster(ps, asmZOf(ps, ev), ev, { H: TL.set.H, voxel: 0.6, blend: 3, smooth: 4, open: 'blocked', clear: 2, holes: 150 }); if (!base) throw new Error('nothing to cut');
+      D = base.D; pieces = withStoreys(ps); paths = AS.pathData ? AS.pathData.paths : circulation(base, pieces, ev, TL.set.H).paths;
+      colorOf = (pc) => asmColor(pc.o); labelOf = (pc) => (pc.o && pc.o.kind === 'connector' ? 'connector' : (refItem(pc.t) || {}).name || '');
+    } else { const c = curCluster(); if (!c || !c.pieces.length) return; title = c.name; const ev = evaluateCluster(c.pieces, byIdFull(), 0);
+      base = fuseNow(c, 0.5, c.fz ? c.fz.set : undefined, c.fz ? c.fz.ops : []); if (!base) throw new Error('nothing to cut'); D = fuseApplyOps(base, c.fz ? c.fz.ops || [] : []); pieces = withStoreys(c.pieces);
+      paths = circulation(base, pieces, ev, TL.set.H).paths; const ids = [...new Set(c.pieces.map((q) => q.t))];
+      colorOf = (pc) => AS_PAL[ids.indexOf(pc.t) % AS_PAL.length]; labelOf = (pc, i) => (i + 1) + ' · ' + ((refItem(pc.t) || {}).name || ''); }
+  } catch (e) { console.warn(e); toast('Could not cut a plan: ' + (e.message || e)); return; }
+  PLAN.src = { base, D, pieces, paths, title, colorOf, labelOf }; const top = Math.max(1, ...pieces.map((pc) => pc.base + (pc.storeys || 1)));
+  $('planLevel').innerHTML = Array.from({ length: top }, (_, g) => `<option value="${g}">${g === 0 ? 'Ground floor' : 'Level ' + (g + 1)}</option>`).join(''); $('planLevel').value = '0';
+  $('planDlg').hidden = false; drawFloorPlan(); status('Floor plan ready.', 1); $('planClose').focus(); }
+function drawFloorPlan() { const S = PLAN.src; if (!S) return; const pd = planData(S.base, S.D, S.pieces, +$('planLevel').value, Math.max(1, +$('planCut').value || 4), S.paths, S.colorOf, S.labelOf);
+  pd.pathsOn = $('planPaths').checked; pd.labelsOn = $('planLabels').checked; if (!pd.pathsOn) pd.lines = []; if (!pd.labelsOn) pd.here.forEach((q) => (q.label = ''));
+  PLAN.pd = pd; PLAN.svg = planSVG(pd, S.title + ' · floor plan'); $('planView').innerHTML = PLAN.svg || '<p class="note" style="padding:16px;color:#333">Nothing on this floor.</p>'; }
+['planLevel', 'planCut', 'planPaths', 'planLabels'].forEach((id) => $(id).addEventListener('change', drawFloorPlan));
+$('planClose').addEventListener('click', () => { $('planDlg').hidden = true; });
+$('planDlg').addEventListener('keydown', (e) => { if (e.key === 'Escape') $('planDlg').hidden = true; });
+$('planSvg').addEventListener('click', async () => { if (!PLAN.svg) return; const nm = safe(PLAN.src.title) + '-plan-' + ($('planLevel').value === '0' ? 'ground' : 'L' + (+$('planLevel').value + 1)); await save(nm + '.svg', new Blob([PLAN.svg], { type: 'image/svg+xml' })); });
+$('planDxf').addEventListener('click', async () => { if (!PLAN.pd) return; const nm = safe(PLAN.src.title) + '-plan-' + ($('planLevel').value === '0' ? 'ground' : 'L' + (+$('planLevel').value + 1)); await save(nm + '.dxf', new Blob([planDXF(PLAN.pd)], { type: 'application/dxf' })); });
+$('tilePlan').addEventListener('click', () => openPlan('cluster'));
+$('asmPlan').addEventListener('click', () => openPlan('asm'));
 /* --- export at real scale: building mesh (+ circulation as polylines and/or pipes) as OBJ or STL, Z up, in the chosen units --- */
 const EXP_UNITS = { ft: [1, 'feet'], in: [12, 'inches'], m: [0.3048, 'meters'], mm: [304.8, 'millimeters'] };
 // a tube mesh along each route (rings at every point, frames kept upright since routes run mostly level)
@@ -6193,10 +6275,20 @@ function showAsm(on) {
 }
 
 /* ---------------- boot ---------------- */
-window.__sbs = { get TL() { return TL; }, get REF() { return REF; }, get AS() { return AS; }, prepAll, tileFull, evaluateCluster, asmPieces, asmCur, byIdFull, pSize, fuseCluster, edgeOf, generateFormation, fitsNow, rulesFor, typoPlan, mulberry: (n) => C.mulberry32(n), exportModel, pipeMesh }; // read-only debugging handle
+window.__sbs = { get TL() { return TL; }, get REF() { return REF; }, get AS() { return AS; }, prepAll, tileFull, evaluateCluster, asmPieces, asmCur, byIdFull, pSize, fuseCluster, edgeOf, generateFormation, fitsNow, rulesFor, typoPlan, mulberry: (n) => C.mulberry32(n), exportModel, pipeMesh, msContours, planData, planSVG, planDXF }; // read-only debugging handle
 renderCrit(); renderSettings(); renderModels(); renderPicks(); renderInspector(); sizeViewer(); sizeMap();
 if (BUILD) { document.body.classList.add('build'); document.title = 'SubD Blend SOM · Clusters'; showTiling(true); } // the light site skips the SOM map's start-up work
 else { const t0 = store.get('typo', 'gathering'); renderTypoTabs(); switchTypo(TABS.some((t) => t.key === t0) ? t0 : 'gathering').then(preloadAll); }
 </script>
 
+<div id="planDlg" class="plandlg" hidden role="dialog" aria-modal="true" aria-labelledby="planTitle"><div class="planbox">
+  <div class="planhead"><strong id="planTitle">Floor plan</strong><span class="planctl">
+    <label>Floor <select id="planLevel"></select></label>
+    <label>Cut at <input type="number" id="planCut" min="1" max="10" step="0.5" value="4"> ft</label>
+    <label><input type="checkbox" id="planPaths" checked> Circulation</label>
+    <label><input type="checkbox" id="planLabels" checked> Pieces</label>
+    <button class="btn small" id="planSvg">SVG</button><button class="btn small primary" id="planDxf">DXF (real scale)</button><button class="btn small" id="planClose" aria-label="Close">Close</button></span></div>
+  <div id="planView" class="planview"></div>
+  <p class="note" id="planNote">Cut walls in black (poché), floor edges in grey, piece outlines dashed, circulation in red. North is up (Rhino +Y). DXF uses the export units in Tile settings.</p>
+</div></div>
 </body></html>
