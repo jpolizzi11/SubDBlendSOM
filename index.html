@@ -467,8 +467,8 @@ details.sub > .settings { padding-bottom: 6px; }
         </div></details>
         <p class="note" id="refStats"></p>
         <div class="actions">
-          <button class="btn small primary" id="refSTL">STL .zip</button>
-          <button class="btn small" id="refAll">All refined STLs .zip</button>
+          <button class="btn small primary" id="refSTL" title="True scale, in the Export units set under Clusters → Tile settings">Export OBJ</button>
+          <button class="btn small" id="refAll" title="One OBJ: every refined piece as its own named object, side by side">Export all (OBJ)</button>
           <details class="menu"><summary class="btn small">More</summary><div class="menu-list left">
           <button class="btn small" id="refReset">Reset this model's refinements</button>
           <button class="btn small" id="refRemove">Remove from Refine</button>
@@ -3926,20 +3926,25 @@ $('refDel').addEventListener('click', () => { const it = refItem(REF.sel); if (!
 $('refUndel').addEventListener('click', () => { const it = refItem(REF.sel); if (!it) return; it.set.del = []; refChanged(true); toast('Deleted pieces are back.'); });
 $('refAuto').addEventListener('click', () => { const it = refItem(REF.sel); if (it) { Object.assign(it.set, AUTO); refChanged(true); toast('Auto-optimized: flat outside, level floors, smoothed.'); } });
 $('refReset').addEventListener('click', () => { const it = refItem(REF.sel); if (it) { it.set = defSet(); refChanged(true); toast('Refinements reset.'); } });
-async function refSTL(it) { const b = REF.built && REF.built.id === it.id ? REF.built.b : await refBuild(it); return C.meshToSTL(b.mesh, b.R, 20, true); }
+// refined pieces at true scale: the same tile size and storey heights a piece has in Clusters (feet, Y up here; exportModel writes Z up in the chosen units)
+async function refTrueMesh(it) { const r = TL.set.exportDetail || 64, b = await refPipeline(it, r), sc = b.R / b.fullR;
+  const lv = b.levels.filter((l) => l.n >= 0.02 * b.fullR * b.fullR).map((l) => ({ h: l.h * sc, n: l.n })); return tileFeet(b.mesh, lv, TL.set.H); }
 $('refSTL').addEventListener('click', async () => {
-  const it = refItem(REF.sel); if (!it) return; const nm = safe(it.name) + '_refined';
-  status('Exporting the refined mesh…'); await save(nm + '.zip', C.zip([{ name: nm + '.stl', data: await refSTL(it) }]));
-  status(`Exported ${nm}.stl (Z up, 20-unit box).`, 1);
+  const it = refItem(REF.sel); if (!it) return; const btn = $('refSTL'); btn.disabled = true;
+  try { status(`Exporting ${it.name} at true scale…`); const m = await refTrueMesh(it);
+    const how = await exportModel(it.name, [{ name: safe(it.name), positions: m.positions, indices: m.indices }], null, 'refined piece', { fmt: 'obj' });
+    status(`Exported ${it.name} as OBJ · ${TILE_FT} ft tile · ${how}.`, 1);
+  } catch (e) { console.error(e); toast('Export failed: ' + (e.message || e)); } finally { btn.disabled = false; }
 });
 $('refAll').addEventListener('click', async () => {
-  if (!REF.items.length) return; const btn = $('refAll'); btn.disabled = true; const files = [], used = new Set();
+  if (!REF.items.length) return; const btn = $('refAll'); btn.disabled = true; const meshes = [], used = new Set(), gap = TILE_FT + 10;
   try {
-    for (let i = 0; i < REF.items.length; i++) { const it = REF.items[i]; status(`Exporting refined STL ${i + 1}/${REF.items.length}…`, (i + 1) / REF.items.length);
-      await new Promise((r) => setTimeout(r, 0)); let nm = safe(it.name) + '_refined'; let j = 2; while (used.has(nm)) nm = safe(it.name) + '_refined_' + j++; used.add(nm);
-      files.push({ name: nm + '.stl', data: await refSTL(it) }); }
-    status('Packing refined STLs…', 1); await save('Refined_STLs.zip', C.zip(files));
-    status(`Exported ${files.length} refined STL${files.length > 1 ? 's' : ''} (Z up, 20-unit box).`, 1);
+    for (let i = 0; i < REF.items.length; i++) { const it = REF.items[i]; status(`Exporting refined piece ${i + 1}/${REF.items.length}…`, (i + 1) / REF.items.length); await new Promise((r) => setTimeout(r, 0));
+      let nm = safe(it.name), j = 2; while (used.has(nm)) nm = safe(it.name) + '_' + j++; used.add(nm);
+      const m = await refTrueMesh(it), P = new Float32Array(m.positions); for (let v = 0; v < P.length; v += 3) P[v] += i * gap; // side by side, 10 ft apart
+      meshes.push({ name: nm, positions: P, indices: m.indices }); }
+    const how = await exportModel('Refined_pieces', meshes, null, 'refined pieces', { fmt: 'obj' });
+    status(`Exported ${meshes.length} refined pieces in one OBJ, each its own object · ${how}.`, 1);
   } catch (e) { console.error(e); toast('Export failed: ' + (e.message || e)); }
   finally { btn.disabled = !REF.items.length; }
 });
@@ -5561,8 +5566,8 @@ function pipeMesh(paths, rad = 0.5, sides = 8) { const P = [], I = [];
     for (const [k, flip] of [[0, true], [pts.length - 1, false]]) { const ci = P.length / 3; P.push(...pts[k]); for (let j = 0; j < sides; j++) { const a = base + k * sides + j, b = base + k * sides + (j + 1) % sides; flip ? I.push(ci, b, a) : I.push(ci, a, b); } } }
   return { positions: new Float32Array(P), indices: new Uint32Array(I) }; }
 // meshes: [{ name, positions (feet, Y up), indices }], paths: polylines of [x, y, z] in feet, Y up
-async function exportModel(name, meshes, paths, what) {
-  const st = TL.set, [f, unitName] = EXP_UNITS[st.expUnits] || EXP_UNITS.ft, fmt = st.expFmt || 'obj', mode = st.expPaths || 'none';
+async function exportModel(name, meshes, paths, what, opt) {
+  const st = TL.set, [f, unitName] = EXP_UNITS[st.expUnits] || EXP_UNITS.ft, fmt = (opt && opt.fmt) || st.expFmt || 'obj', mode = st.expPaths || 'none';
   const wantLines = !!(paths && paths.length) && (mode === 'lines' || mode === 'both'), wantPipes = !!(paths && paths.length) && (mode === 'pipes' || mode === 'both' || (fmt === 'stl' && mode === 'lines'));
   const zu = (x, y, z) => [x * f, -z * f, y * f], all = meshes.slice(); if (wantPipes) all.push(Object.assign({ name: 'circulation_pipes' }, pipeMesh(paths, 0.5)));
   const files = [], base = safe(name);
@@ -6251,7 +6256,7 @@ function showAsm(on) {
 }
 
 /* ---------------- boot ---------------- */
-window.__sbs = { get TL() { return TL; }, get REF() { return REF; }, get AS() { return AS; }, prepAll, tileFull, evaluateCluster, asmPieces, asmCur, byIdFull, pSize, fuseCluster, edgeOf, generateFormation, fitsNow, rulesFor, typoPlan, mulberry: (n) => C.mulberry32(n), exportModel, pipeMesh, get asmGum() { return asmGum; }, get asmGumObj() { return asmGumObj; } }; // read-only debugging handle
+window.__sbs = { get TL() { return TL; }, get REF() { return REF; }, get AS() { return AS; }, prepAll, tileFull, evaluateCluster, asmPieces, asmCur, byIdFull, pSize, fuseCluster, edgeOf, generateFormation, fitsNow, rulesFor, typoPlan, mulberry: (n) => C.mulberry32(n), exportModel, pipeMesh, refTrueMesh, get asmGum() { return asmGum; }, get asmGumObj() { return asmGumObj; } }; // read-only debugging handle
 renderCrit(); renderSettings(); renderModels(); renderPicks(); renderInspector(); sizeViewer(); sizeMap();
 if (BUILD) { document.body.classList.add('build'); document.title = 'SubD Blend SOM · Clusters'; showTiling(true); } // the light site skips the SOM map's start-up work
 else { const t0 = store.get('typo', 'gathering'); renderTypoTabs(); switchTypo(TABS.some((t) => t.key === t0) ? t0 : 'gathering').then(preloadAll); }
