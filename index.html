@@ -5579,7 +5579,7 @@ async function exportModel(name, meshes, paths, what, opt) {
       files.push({ name: base + (m.name === 'building' ? '' : '-' + m.name) + '.stl', data: new Uint8Array(buf) }); }
   } else {
     const out = [`# SubD Blend SOM · ${what} "${name}"`, `# units: ${unitName} (real scale), Z up`]; let vo = 0; const n6 = (x) => +x.toFixed(4);
-    for (const m of all) { const P = m.positions, I = m.indices; out.push('o ' + m.name); for (let i = 0; i < P.length; i += 3) { const q = zu(P[i], P[i + 1], P[i + 2]); out.push(`v ${n6(q[0])} ${n6(q[1])} ${n6(q[2])}`); }
+    for (const m of all) { const P = m.positions, I = m.indices; if (m.group) out.push('g ' + safe(m.group)); out.push('o ' + safe(m.name)); for (let i = 0; i < P.length; i += 3) { const q = zu(P[i], P[i + 1], P[i + 2]); out.push(`v ${n6(q[0])} ${n6(q[1])} ${n6(q[2])}`); }
       for (let t = 0; t < I.length; t += 3) out.push(`f ${I[t] + 1 + vo} ${I[t + 1] + 1 + vo} ${I[t + 2] + 1 + vo}`); vo += P.length / 3; }
     if (wantLines) { out.push('o circulation_lines'); for (const pts of paths) { if (pts.length < 2) continue; const ids = []; for (const p of pts) { const q = zu(p[0], p[1], p[2]); out.push(`v ${n6(q[0])} ${n6(q[1])} ${n6(q[2])}`); ids.push(++vo); } out.push('l ' + ids.join(' ')); } }
     files.push({ name: base + '.obj', data: new TextEncoder().encode(out.join('\n') + '\n') });
@@ -6244,9 +6244,30 @@ function asmPaths(a, ps, ev) {
 $('asmColor').addEventListener('change', (e) => { AS.color = e.target.value; renderAsmPlan(); renderAsm3D(); });
 $('asmFuse').addEventListener('change', (e) => { AS.fuse = e.target.checked; AS.pathData = null; renderAsm3D(); });
 $('asmPathsChk').addEventListener('change', (e) => { AS.paths = e.target.checked; renderAsm3D(); });
-$('asmExport').addEventListener('click', async () => { const a = asmCur(); if (!a) return; if (!AS.fuse || !AS.mesh) { toast('Tick Fuse first: the export is the assembly as one fused solid.'); return; }
-  let paths = null; if ((TL.set.expPaths || 'none') !== 'none') { if (!AS.pathData && AS.base) { try { const ps = asmPieces(a); AS.pathData = circulation(AS.base, withStoreys(ps), evaluateCluster(ps, byIdFull(), 0), TL.set.H); } catch (e) { console.warn('paths', e); } } paths = AS.pathData ? AS.pathData.paths : null; }
-  const how = await exportModel(a.name, [{ name: 'building', positions: AS.mesh.positions, indices: AS.mesh.indices }], paths, 'assembly'); status(`Exported ${a.name} · ${how}.`, 1); });
+// every piece as its own mesh where it sits in the layout (feet, Y up), built from the refined models at export detail
+async function asmPieceMeshes(ps, roofCutSet) {
+  const H = TL.set.H, r = TL.set.exportDetail || 64, geo = new Map(), ids = [...new Set(ps.map((q) => q.t))].filter((id) => refItem(id));
+  for (let k = 0; k < ids.length; k++) { const it = refItem(ids[k]); status(`Exporting · building ${it.name} (${k + 1}/${ids.length})…`, (k + 1) / (ids.length + 1));
+    const b = await refPipeline(it, r), sc = b.R / b.fullR, lv = b.levels.filter((l) => l.n >= 0.02 * b.fullR * b.fullR).map((l) => ({ h: l.h * sc, n: l.n })); geo.set(ids[k], tileFeet(b.mesh, lv, H));
+    const pre = TL.pre.get(ids[k]); if (pre && pre.tallVoid && ps.some((q, qi) => q.t === ids[k] && roofCutSet.has(qi))) { const bc = await refPipeline(it, r, (Fs) => roofCut(Fs, b.fullR, pre.vo)); geo.set(ids[k] + '|cut', tileFeet(bc.mesh, lv, H)); } }
+  const out = [], count = new Map();
+  ps.forEach((pc, qi) => { const gk = roofCutSet.has(qi) && geo.has(pc.t + '|cut') ? pc.t + '|cut' : pc.t, g = geo.get(gk); if (!g) return;
+    const P = g.positions, I = g.indices, sc = pc.sc || 1, th = -(pc.rot || 0) * Math.PI / 2, co = Math.cos(th), si = Math.sin(th), Q = new Float32Array(P.length), J = new Uint32Array(I.length), y0 = (pc.base || 0) * H + (pc.lift || 0);
+    for (let v = 0; v < P.length; v += 3) { const x = P[v] * (pc.mir ? -1 : 1) * sc, z = P[v + 2] * sc; Q[v] = x * co + z * si + pc.x; Q[v + 1] = P[v + 1] + y0; Q[v + 2] = -x * si + z * co + pc.z; }
+    for (let t = 0; t < I.length; t += 3) { J[t] = I[t]; J[t + 1] = pc.mir ? I[t + 2] : I[t + 1]; J[t + 2] = pc.mir ? I[t + 1] : I[t + 2]; }
+    const grp = pc.o.kind === 'cluster' ? pc.o.name : 'Connectors', n = (count.get(grp) || 0) + 1; count.set(grp, n);
+    out.push({ group: grp, name: grp + '_' + (pc.o.kind === 'cluster' ? 'p' + (pc.o.k + 1) : 'c' + n) + '_' + ((refItem(pc.t) || {}).name || 'tile'), positions: Q, indices: J }); });
+  return out; }
+$('asmExport').addEventListener('click', async () => { const a = asmCur(); if (!a) return; const ps = asmPieces(a); if (!ps.length) { toast('Nothing to export yet.'); return; }
+  const btn = $('asmExport'); btn.disabled = true;
+  try {
+    let paths = null; if ((TL.set.expPaths || 'none') !== 'none') { if (!AS.pathData && AS.base) { try { AS.pathData = circulation(AS.base, withStoreys(ps), evaluateCluster(ps, byIdFull(), 0), TL.set.H); } catch (e) { console.warn('paths', e); } } paths = AS.pathData ? AS.pathData.paths : null; }
+    if (AS.fuse && AS.mesh) { // Fuse ticked: one fused solid, as before
+      const how = await exportModel(a.name, [{ name: 'building', positions: AS.mesh.positions, indices: AS.mesh.indices }], paths, 'assembly'); status(`Exported ${a.name} · ${how}.`, 1); }
+    else { // Fuse unticked: every piece separately, where it sits
+      const ev = asmEval(ps), meshes = await asmPieceMeshes(ps, ev.roofCut || new Set());
+      const how = await exportModel(a.name + '-pieces', meshes, paths, 'assembly, unfused'); status(`Exported ${a.name} unfused: ${meshes.length} separate pieces · ${how}.`, 1); }
+  } catch (e) { console.error(e); toast('Export failed: ' + (e.message || e)); } finally { btn.disabled = false; } });
 
 function showAsm(on) {
   if (on && state.running) { toast('Wait for the SOM run to finish.'); return; }
@@ -6256,7 +6277,7 @@ function showAsm(on) {
 }
 
 /* ---------------- boot ---------------- */
-window.__sbs = { get TL() { return TL; }, get REF() { return REF; }, get AS() { return AS; }, prepAll, tileFull, evaluateCluster, asmPieces, asmCur, byIdFull, pSize, fuseCluster, edgeOf, generateFormation, fitsNow, rulesFor, typoPlan, mulberry: (n) => C.mulberry32(n), exportModel, pipeMesh, refTrueMesh, get asmGum() { return asmGum; }, get asmGumObj() { return asmGumObj; } }; // read-only debugging handle
+window.__sbs = { get TL() { return TL; }, get REF() { return REF; }, get AS() { return AS; }, prepAll, tileFull, evaluateCluster, asmPieces, asmCur, byIdFull, pSize, fuseCluster, edgeOf, generateFormation, fitsNow, rulesFor, typoPlan, mulberry: (n) => C.mulberry32(n), exportModel, pipeMesh, refTrueMesh, asmPieceMeshes, asmEval, get asmGum() { return asmGum; }, get asmGumObj() { return asmGumObj; } }; // read-only debugging handle
 renderCrit(); renderSettings(); renderModels(); renderPicks(); renderInspector(); sizeViewer(); sizeMap();
 if (BUILD) { document.body.classList.add('build'); document.title = 'SubD Blend SOM · Clusters'; showTiling(true); } // the light site skips the SOM map's start-up work
 else { const t0 = store.get('typo', 'gathering'); renderTypoTabs(); switchTypo(TABS.some((t) => t.key === t0) ? t0 : 'gathering').then(preloadAll); }
