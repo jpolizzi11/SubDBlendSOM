@@ -5579,7 +5579,7 @@ async function exportModel(name, meshes, paths, what, opt) {
       files.push({ name: base + (m.name === 'building' ? '' : '-' + m.name) + '.stl', data: new Uint8Array(buf) }); }
   } else {
     const out = [`# SubD Blend SOM · ${what} "${name}"`, `# units: ${unitName} (real scale), Z up`]; let vo = 0; const n6 = (x) => +x.toFixed(4);
-    for (const m of all) { const P = m.positions, I = m.indices; if (m.group) out.push('g ' + safe(m.group)); out.push('o ' + safe(m.name)); for (let i = 0; i < P.length; i += 3) { const q = zu(P[i], P[i + 1], P[i + 2]); out.push(`v ${n6(q[0])} ${n6(q[1])} ${n6(q[2])}`); }
+    for (const m of all) { const P = m.positions, I = m.indices; out.push('o ' + safe(m.name)); // plain objects only (no group lines), the format Rhino reads reliably for (let i = 0; i < P.length; i += 3) { const q = zu(P[i], P[i + 1], P[i + 2]); out.push(`v ${n6(q[0])} ${n6(q[1])} ${n6(q[2])}`); }
       for (let t = 0; t < I.length; t += 3) out.push(`f ${I[t] + 1 + vo} ${I[t + 1] + 1 + vo} ${I[t + 2] + 1 + vo}`); vo += P.length / 3; }
     if (wantLines) { out.push('o circulation_lines'); for (const pts of paths) { if (pts.length < 2) continue; const ids = []; for (const p of pts) { const q = zu(p[0], p[1], p[2]); out.push(`v ${n6(q[0])} ${n6(q[1])} ${n6(q[2])}`); ids.push(++vo); } out.push('l ' + ids.join(' ')); } }
     files.push({ name: base + '.obj', data: new TextEncoder().encode(out.join('\n') + '\n') });
